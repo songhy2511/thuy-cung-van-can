@@ -1,6 +1,6 @@
 import {
   MAP_SIZE, BASE_FOOD_COUNT, EVO_TIERS, BOSS_SPAWNS, UPGRADE_DEFS, QUEST_TEMPLATES,
-  BOSS_VISION_RADIUS, BOSS_VORTEX_RADIUS
+  BOSS_VISION_RADIUS, BOSS_VORTEX_RADIUS, MAX_UPGRADE_LEVEL
 } from "./config.js";
 import { getFishConfig, getAllFishConfigs, getBuffList, getBuffConfig, getEventConfig } from "./registries.js";
 import * as svc from "./firebaseService.js";
@@ -72,9 +72,10 @@ const createFreshQuests = () => ({
   foodEaten: 0, fishKilled: 0, reachedTier2: 0, bossKilled: 0, gamesPlayed: 0,
   claimed: {}, lastResetDate: getTodayDateVN()
 });
+const createDefaultUpgrades = () => ({ hp: 0, speed: 0, dmg: 0, eatRange: 0, defense: 0 });
 const createDefaultUser = (user) => ({
   nickname: user.displayName ? user.displayName.slice(0, 14) : "Ngư Thủ",
-  coins: 150, bestScore: 0, upgrades: { hp: 0, speed: 0, dmg: 0 }, quests: createFreshQuests()
+  coins: 150, bestScore: 0, upgrades: createDefaultUpgrades(), quests: createFreshQuests()
 });
 
 async function ensureDailyQuestReset(shouldSave = true) {
@@ -115,7 +116,7 @@ svc.initAuthObserver(
   async (user) => {
     currentUser = user;
     userData = await svc.loadUserProfile(user.uid, () => createDefaultUser(user));
-    if (!userData.upgrades) userData.upgrades = { hp: 0, speed: 0, dmg: 0 };
+    userData.upgrades = { ...createDefaultUpgrades(), ...(userData.upgrades || {}) };
     await ensureDailyQuestReset(true);
     initChatUI();
     await renderLobby();
@@ -158,12 +159,25 @@ async function renderLobby() {
   const upgList = document.getElementById("upgrade-list");
   upgList.innerHTML = "";
   UPGRADE_DEFS.forEach(u => {
-    const lvl = userData.upgrades[u.key] || 0;
+    const maxLvl = u.maxLevel || MAX_UPGRADE_LEVEL;
+    const rawLvl = userData.upgrades[u.key] || 0;
+    const lvl = Math.min(maxLvl, rawLvl);
+    const isMax = lvl >= maxLvl;
     const cost = u.baseCost + lvl * u.stepCost;
+
     const div = document.createElement("div");
     div.className = "upgrade-item";
-    div.innerHTML = `<div class="upgrade-info"><b>${u.name} (Cấp ${lvl})</b><div>${u.bonusText}</div></div><button class="btn-small">🪙 ${cost}</button>`;
+    div.innerHTML = `
+      <div class="upgrade-info">
+        <b>${u.name} (Cấp ${lvl}/${maxLvl})</b>
+        <div>${u.bonusText}</div>
+      </div>
+      <button class="btn-small" ${isMax ? 'disabled style="background:#2b4459;color:#9ec9e6;cursor:default;"' : ""}>
+        ${isMax ? "TỐI ĐA" : `🪙 ${cost}`}
+      </button>
+    `;
     div.querySelector("button").onclick = async () => {
+      if (isMax) return;
       if (userData.coins < cost) return alert("Không đủ Coin!");
       userData.coins -= cost;
       userData.upgrades[u.key] = lvl + 1;
@@ -252,7 +266,7 @@ function stopChatUI() { if (chatUnsub) { chatUnsub(); chatUnsub = null; } }
 function isImmuneToStun(fish) {
   if (!fish) return false;
   const ultCfg = getFishConfig(fish.species).ultimate;
-  return fish.ultTimer > 0 && !!ultCfg.domainRadius; // Cá Vua đang bật "Áp chế tuyệt đối" miễn nhiễm choáng
+  return fish.ultTimer > 0 && !!ultCfg.domainRadius;
 }
 
 function applyStunToMe(seconds) {
@@ -284,7 +298,6 @@ function getDomainEffects() {
     }
   });
 
-  // Lĩnh vực "Sức mạnh tuyệt đối" của Boss làm giảm 40% tốc chạy toàn bộ cá Boss nhìn thấy
   const nowMs = Date.now();
   Object.values(bossesState).forEach(b => {
     if (b && b.alive && (b.absUntil || 0) > nowMs) {
@@ -311,7 +324,7 @@ function getEffectiveStats() {
   const dom = getDomainEffects();
 
   let speedMult = 1, dmgMult = 1, maxHpMult = 1, biteRangeMult = 1, expMult = 1;
-  let dmgTakenMult = fishCfg.stats.dmgTakenMult;
+  let dmgTakenMult = myFish.baseDmgTakenMult;
 
   if (ev?.modifiers) {
     if (ev.modifiers.speedMult) speedMult *= ev.modifiers.speedMult;
@@ -325,7 +338,7 @@ function getEffectiveStats() {
     speedMult *= keep; dmgMult *= keep; maxHpMult *= keep;
   }
   if (dom.bossSlowed) {
-    speedMult *= 0.6; // Giảm 40% tốc chạy trong tầm nhìn Boss khi Boss bật Sức mạnh tuyệt đối
+    speedMult *= 0.6;
   }
   if (dom.suppressedCount > 0) {
     const bonus = 1 + dom.suppressedCount * (fishCfg.ultimate.domainBuffPerEnemy || 0.1);
@@ -359,17 +372,26 @@ async function startMatch() {
     await svc.saveUserProfile(currentUser.uid, userData);
   }
 
-  const baseHp = 120 + (userData.upgrades.hp || 0) * 20;
-  const baseSpeed = (240 + (userData.upgrades.speed || 0) * 10) * cfg.stats.speedMult;
-  const baseDmg = (22 + (userData.upgrades.dmg || 0) * 5) * cfg.stats.dmgMult;
+  // Áp dụng nâng cấp khởi đầu (giới hạn tối đa cấp 10)
+  const hpLvl = Math.min(MAX_UPGRADE_LEVEL, userData.upgrades.hp || 0);
+  const speedLvl = Math.min(MAX_UPGRADE_LEVEL, userData.upgrades.speed || 0);
+  const dmgLvl = Math.min(MAX_UPGRADE_LEVEL, userData.upgrades.dmg || 0);
+  const eatLvl = Math.min(MAX_UPGRADE_LEVEL, userData.upgrades.eatRange || 0);
+  const defLvl = Math.min(MAX_UPGRADE_LEVEL, userData.upgrades.defense || 0);
+
+  const baseHp = 120 + hpLvl * 20;
+  const baseSpeed = 240 * (1 + speedLvl * 0.02) * cfg.stats.speedMult; // +2% mỗi cấp
+  const baseDmg = (22 + dmgLvl * 5) * cfg.stats.dmgMult;
+  const eatRangeBonus = 1 + eatLvl * 0.05; // +5% tầm hút thức ăn mỗi cấp
+  const baseDmgTakenMult = Math.max(0.1, cfg.stats.dmgTakenMult - defLvl * 0.01); // +1% giảm sát thương nhận mỗi cấp
 
   myFish = {
     uid: currentUser.uid, name: userData.nickname, species: selectedFishId,
     x: 400 + Math.random() * (MAP_SIZE - 800), y: 400 + Math.random() * (MAP_SIZE - 800),
     angle: 0, level: 1, tier: 1, exp: 0, expNeed: 50, score: 0,
-    hp: baseHp, baseMaxHp: baseHp, baseSpeed, baseDmg,
+    hp: baseHp, baseMaxHp: baseHp, baseSpeed, baseDmg, baseDmgTakenMult,
     healOnFood: cfg.stats.healOnFood, healOnKill: cfg.stats.healOnKill,
-    eatRangeBonus: 1, sizeMult: 1, skillDmgMult: 1, skillCdMult: 1,
+    eatRangeBonus, sizeMult: 1, skillDmgMult: 1, skillCdMult: 1,
     skillTimer: 0, ultTimer: 0, ultCdTimer: 0, shieldTimer: 3.0, stunTimer: 0,
     dashTimer: 0, reflectTimer: 0, biteCooldown: 0, chompTimer: 0,
     buffCounts: {}, joinedAt: Date.now()
@@ -538,14 +560,14 @@ function performBite() {
 
       if ((p.hp || 100) <= dmg && (!recentPvpKillReward[p.uid] || Date.now() - recentPvpKillReward[p.uid] > 4000)) {
         recentPvpKillReward[p.uid] = Date.now();
-        sessionStats.fishKilled++; sessionStats.coinsEarned += 15;
+        sessionStats.fishKilled++; sessionStats.coinsEarned += 6; // Giảm Coin nuốt người chơi
         gainExp(90 + (p.level || 1) * 12);
         if (myFish.healOnKill > 0 && myFish.hp < eff.maxHp) {
           const h = Math.min(myFish.healOnKill, eff.maxHp - myFish.hp);
           myFish.hp += h;
           addFloatingText(myFish.x, myFish.y - 25, `+${Math.round(h)} HP`, "#51cf66", 1);
         }
-        addToast(`🔥 Bạn vừa nuốt chửng ${p.name}! (+15 Coin)`);
+        addToast(`🔥 Bạn vừa nuốt chửng ${p.name}! (+6 Coin)`);
       }
     }
   });
@@ -577,7 +599,6 @@ function triggerUltimateSkill() {
   const cfg = getFishConfig(myFish.species);
   myFish.ultCdTimer = cfg.skill.cd * 3 * myFish.skillCdMult;
   myFish.ultTimer = cfg.ultimate.duration || 10;
-  // Nếu Cá Vua kích hoạt "Áp chế tuyệt đối" -> giải choáng ngay lập tức
   if (isImmuneToStun(myFish)) myFish.stunTimer = 0;
 
   addToast(`🔥 KÍCH HOẠT: ${cfg.ultimate.name.toUpperCase()}! (${myFish.ultTimer}s)`);
@@ -621,9 +642,9 @@ function damageBoss(bossId, dmg, isCrit = false, fxX = null, fxY = null) {
     } else if (res.killed) {
       localBossKillLock[bossId] = true;
       setTimeout(() => { delete localBossKillLock[bossId]; }, 5000);
-      sessionStats.bossKilled++; sessionStats.coinsEarned += 80;
+      sessionStats.bossKilled++; sessionStats.coinsEarned += 25; // Giảm Coin hạ Boss
       gainExp(350);
-      addToast(`🏆 HẠ GỤC ${(res.boss?.name || "BOSS").toUpperCase()}! (+80 Coin, +350 EXP)`);
+      addToast(`🏆 HẠ GỤC ${(res.boss?.name || "BOSS").toUpperCase()}! (+25 Coin, +350 EXP)`);
     }
   });
 }
@@ -638,7 +659,7 @@ function damageAiFish(ai, dmg, isCrit = false, fxX = ai.x, fxY = ai.y) {
     addFloatingText(ai.x, ai.y - 25, `-${Math.round(dmg)}`, "#ffd43b", 1);
   }
   if (ai.hp <= 0) {
-    sessionStats.fishKilled++; sessionStats.coinsEarned += 5;
+    sessionStats.fishKilled++; sessionStats.coinsEarned += 2; // Giảm Coin farm cá AI
     gainExp(55 + ai.level * 10);
     const eff = getEffectiveStats();
     if (myFish.healOnKill > 0 && myFish.hp < eff.maxHp) {
@@ -750,7 +771,7 @@ function updateGame(dt) {
 
   let moveFactor = 0;
   if (myFish.stunTimer > 0) {
-    moveFactor = 0; // Đang bị choáng -> đứng yên
+    moveFactor = 0;
   } else if (input.inputMode === "touch") {
     if (input.joystick.active) { myFish.angle = input.joystick.angle; moveFactor = input.joystick.power; }
     else if (myFish.dashTimer > 0) moveFactor = 1;
@@ -835,7 +856,6 @@ function updateGame(dt) {
     }
   });
 
-  // Xử lý 3 Boss: Cận chiến, Lốc xoáy Tầm xa, Vòng xoáy Choáng 5s & Sức mạnh tuyệt đối
   const nowMs = Date.now();
   Object.values(bossesState).forEach(b => {
     if (!b?.alive) return;
@@ -847,7 +867,6 @@ function updateGame(dt) {
     const isAbs = (b.absUntil || 0) > nowMs;
     const hungryMult = isHungry ? 1.5 : 1.0;
 
-    // A. Skill "Chạy đâu cho thoát": Đụng vào vòng xoáy -> Choáng 5s (Cá Vua bật lĩnh vực miễn choáng)
     if ((b.vortexUntil || 0) > nowMs && dist <= BOSS_VORTEX_RADIUS + myR) {
       if (lastVortexHitAt[b.id] !== b.vortexStartedAt) {
         lastVortexHitAt[b.id] = b.vortexStartedAt;
@@ -855,7 +874,6 @@ function updateGame(dt) {
       }
     }
 
-    // B. Tấn công Cận chiến (và Lao tới gây choáng khi bật "Sức mạnh tuyệt đối")
     const meleeRange = (bossR + myR + 28) * hungryMult;
     if (dist <= meleeRange && nowMs >= (bossMeleeCooldown[b.id] || 0)) {
       bossMeleeCooldown[b.id] = nowMs + 1150;
@@ -868,7 +886,6 @@ function updateGame(dt) {
       if (didDeal) svc.notifyBossDealtDamage(b.id);
     }
 
-    // C. Tấn công Tầm xa (Lốc xoáy dưới chân người chơi)
     if (b.rangedStrike && nowMs >= b.rangedStrike.triggerAt && nowMs <= b.rangedStrike.expiresAt) {
       if (!handledTornadoIds.has(b.rangedStrike.id)) {
         handledTornadoIds.add(b.rangedStrike.id);
@@ -979,7 +996,7 @@ async function finishMatch(isDead, reason) {
 
   await ensureDailyQuestReset(false);
   const score = myFish ? Math.round(myFish.score) : 0;
-  const totalCoins = sessionStats.coinsEarned + Math.floor(score / 40);
+  const totalCoins = sessionStats.coinsEarned + Math.floor(score / 150); // Giảm Coin thưởng theo điểm
 
   userData.coins += totalCoins;
   userData.bestScore = Math.max(userData.bestScore || 0, score);

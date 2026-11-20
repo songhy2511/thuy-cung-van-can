@@ -6,9 +6,11 @@ export const EVENT_INTERVAL_MS = 120000;// Mỗi 2 phút 1 lần
 export const DOMAIN_RADIUS = 340;
 
 // Thông số tầm nhìn & kỹ năng Boss
-export const BOSS_VISION_RADIUS = 620;  // Tầm nhìn & Lĩnh vực "Sức mạnh tuyệt đối"
-export const BOSS_RANGED_RANGE = 500;   // Tầm đánh tầm xa (ngoài vòng cận chiến)
-export const BOSS_VORTEX_RADIUS = 230;  // Bán kính vòng xoáy "Chạy đâu cho thoát"
+export const BOSS_VISION_RADIUS = 620;
+export const BOSS_RANGED_RANGE = 500;
+export const BOSS_VORTEX_RADIUS = 230;
+
+export const MAX_UPGRADE_LEVEL = 10;
 
 export const EVO_TIERS = [
   { tier: 1, name: "Cá Con Tập Sự", baseRadius: 22 },
@@ -25,9 +27,11 @@ export const BOSS_SPAWNS = [
 ];
 
 export const UPGRADE_DEFS = [
-  { key: "hp", name: "Máu Khởi Đầu", bonusText: "+20 HP / cấp", baseCost: 50, stepCost: 40 },
-  { key: "speed", name: "Tốc Độ Bơi", bonusText: "+4% Tốc độ / cấp", baseCost: 50, stepCost: 40 },
-  { key: "dmg", name: "Sức Cắn", bonusText: "+5 Sát thương / cấp", baseCost: 50, stepCost: 40 }
+  { key: "hp",       name: "Máu Khởi Đầu",   bonusText: "+20 HP / cấp",            baseCost: 100, stepCost: 80, maxLevel: MAX_UPGRADE_LEVEL },
+  { key: "speed",    name: "Tốc Độ Bơi",     bonusText: "+2% Tốc độ / cấp",        baseCost: 100, stepCost: 80, maxLevel: MAX_UPGRADE_LEVEL },
+  { key: "dmg",      name: "Sức Cắn",        bonusText: "+5 Sát thương / cấp",     baseCost: 100, stepCost: 80, maxLevel: MAX_UPGRADE_LEVEL },
+  { key: "eatRange", name: "Hút Thức Ăn",    bonusText: "+5% Tầm hút / cấp",       baseCost: 100, stepCost: 80, maxLevel: MAX_UPGRADE_LEVEL },
+  { key: "defense",  name: "Giảm Sát Thương",bonusText: "+1% Giảm ST nhận / cấp",  baseCost: 100, stepCost: 80, maxLevel: MAX_UPGRADE_LEVEL }
 ];
 
 export const QUEST_TEMPLATES = [
