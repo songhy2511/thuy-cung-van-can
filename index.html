@@ -56,9 +56,9 @@
         </div>
       </div>
 
-      <!-- NHIỆM VỤ & BXH -->
+      <!-- NHIỆM VỤ HÀNG NGÀY & BXH -->
       <div class="panel quest-panel">
-        <h2>📜 Bảng Nhiệm Vụ</h2>
+        <h2>📜 Nhiệm Vụ Hàng Ngày <span class="quest-reset-tag">Reset 00:00</span></h2>
         <div id="quest-list" class="quest-list"></div>
 
         <h2 style="margin-top: 16px;">🏆 Vinh Danh Top Cao Thủ</h2>
@@ -172,6 +172,25 @@
       <h2 id="death-title">💀 BẠN ĐÃ BỊ NUỐT CHỬNG!</h2>
       <div id="death-summary" class="death-summary"></div>
       <button id="btn-back-lobby" class="btn-play">Về Sảnh & Cập Nhật Nhiệm Vụ</button>
+    </div>
+  </div>
+
+  <!-- KHUNG CHAT ONLINE (DÙNG ĐƯỢC CẢ Ở SẢNH & TRONG TRẬN) -->
+  <div id="chat-widget" class="chat-widget hidden">
+    <button id="chat-toggle-btn" class="chat-toggle-btn" type="button">
+      💬 Chat <span id="chat-unread" class="chat-unread hidden">0</span>
+    </button>
+
+    <div id="chat-box" class="chat-box hidden">
+      <div class="chat-header">
+        <span>💬 Chat Thủy Cung</span>
+        <button id="chat-close-btn" class="chat-close-btn" type="button">✕</button>
+      </div>
+      <div id="chat-messages" class="chat-messages"></div>
+      <form id="chat-form" class="chat-form">
+        <input id="chat-input" type="text" maxlength="120" placeholder="Nhắn tin (tối đa 120 ký tự)..." autocomplete="off" />
+        <button type="submit">Gửi</button>
+      </form>
     </div>
   </div>
 

@@ -214,6 +214,19 @@ body, html {
   margin-bottom: 12px;
   border-bottom: 1px solid rgba(107, 208, 255, 0.2);
   padding-bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.quest-reset-tag {
+  font-size: 11px;
+  background: rgba(56, 189, 248, 0.18);
+  border: 1px solid #38bdf8;
+  color: #bae6fd;
+  padding: 2px 8px;
+  border-radius: 99px;
+  font-weight: 700;
 }
 
 .fish-grid {
@@ -708,6 +721,127 @@ body, html {
   opacity: 0;
 }
 
+/* ===== KHUNG CHAT ONLINE ===== */
+.chat-widget {
+  position: fixed;
+  left: 12px;
+  top: 200px;
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.chat-widget.lobby-pos {
+  top: auto;
+  left: auto;
+  right: 20px;
+  bottom: 18px;
+  align-items: flex-end;
+}
+.chat-widget.hidden,
+.chat-box.hidden,
+.chat-toggle-btn.hidden,
+.chat-unread.hidden {
+  display: none;
+}
+
+.chat-toggle-btn {
+  position: relative;
+  background: rgba(7, 36, 63, 0.9);
+  border: 2px solid #38bdf8;
+  color: #e9f5ff;
+  padding: 8px 14px;
+  border-radius: 99px;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+}
+.chat-unread {
+  background: #e03131;
+  color: #fff;
+  border-radius: 99px;
+  padding: 1px 6px;
+  font-size: 11px;
+  margin-left: 4px;
+}
+
+.chat-box {
+  width: 270px;
+  max-width: 82vw;
+  background: rgba(5, 25, 45, 0.88);
+  border: 1.5px solid #2e84be;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(6px);
+}
+.chat-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 7px 10px;
+  background: rgba(15, 57, 94, 0.9);
+  font-size: 12px;
+  font-weight: 800;
+  color: #ffd43b;
+}
+.chat-close-btn {
+  background: transparent;
+  border: none;
+  color: #cde9ff;
+  font-size: 14px;
+  font-weight: 900;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.chat-messages {
+  height: 155px;
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12px;
+  line-height: 1.35;
+}
+.chat-msg {
+  word-break: break-word;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.chat-msg .c-name {
+  font-weight: 800;
+  color: #74c0fc;
+}
+.chat-msg.me .c-name {
+  color: #ffd43b;
+}
+.chat-form {
+  display: flex;
+  border-top: 1px solid rgba(77, 184, 255, 0.25);
+}
+.chat-form input {
+  flex: 1;
+  background: rgba(4, 18, 34, 0.85);
+  border: none;
+  color: #fff;
+  padding: 8px 10px;
+  font-size: 12px;
+  outline: none;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.chat-form button {
+  background: #1c8adb;
+  border: none;
+  color: #fff;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
 /* BUFF MODAL */
 .buff-overlay {
   position: fixed;
@@ -845,12 +979,14 @@ body, html {
   .boss-banner { font-size: 10px; padding: 4px 6px; }
 
   .hud-bottom-center { bottom: 8px; width: 94%; }
-  .skill-box { display: none; } /* Mobile dùng nút Skill tròn bên phải */
+  .skill-box { display: none; }
   .buff-card { width: 145px; padding: 12px 8px; }
   .buff-card .b-icon { font-size: 26px; }
+
+  .chat-widget { top: 132px; left: 8px; }
+  .chat-messages { height: 115px; }
 }
 
-/* Khi xoay ngang điện thoại (chiều cao màn hình nhỏ) */
 @media (max-height: 500px) {
   #minimap-canvas { width: 88px; height: 88px; }
   .minimap-legend { display: none; }
@@ -867,4 +1003,6 @@ body, html {
   .btn-touch-bite { width: 72px; height: 72px; }
   .btn-touch-skill { width: 58px; height: 58px; }
   .skill-box { display: none; }
+  .chat-widget { top: 108px; left: 8px; }
+  .chat-messages { height: 90px; }
 }
