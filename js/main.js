@@ -1,4 +1,7 @@
-import { MAP_SIZE, BASE_FOOD_COUNT, EVO_TIERS, BOSS_SPAWNS, UPGRADE_DEFS, QUEST_TEMPLATES } from "./config.js";
+import {
+  MAP_SIZE, BASE_FOOD_COUNT, EVO_TIERS, BOSS_SPAWNS, UPGRADE_DEFS, QUEST_TEMPLATES,
+  BOSS_VISION_RADIUS, BOSS_VORTEX_RADIUS
+} from "./config.js";
 import { getFishConfig, getAllFishConfigs, getBuffList, getBuffConfig, getEventConfig } from "./registries.js";
 import * as svc from "./firebaseService.js";
 import { GameRenderer, getTierFromLevel, getFishRadius } from "./renderer.js";
@@ -34,6 +37,9 @@ let choosingBuff = false;
 
 const localBossKillLock = {};
 const recentPvpKillReward = {};
+const handledTornadoIds = new Set();
+const lastVortexHitAt = {};
+const bossMeleeCooldown = {};
 
 // ==================== KHỞI TẠO ENGINE & INPUT ====================
 const canvas = document.getElementById("game-canvas");
@@ -94,10 +100,7 @@ function showScreen(name) {
   screens[name].classList.add("active");
   const cw = document.getElementById("chat-widget");
   if (name === "login") cw.classList.add("hidden");
-  else {
-    cw.classList.remove("hidden");
-    cw.classList.toggle("lobby-pos", name === "lobby");
-  }
+  else { cw.classList.remove("hidden"); cw.classList.toggle("lobby-pos", name === "lobby"); }
 }
 
 document.getElementById("btn-google-login").addEventListener("click", async () => {
@@ -118,11 +121,7 @@ svc.initAuthObserver(
     await renderLobby();
     showScreen("lobby");
   },
-  () => {
-    currentUser = null;
-    stopChatUI();
-    showScreen("login");
-  }
+  () => { currentUser = null; stopChatUI(); showScreen("login"); }
 );
 
 document.getElementById("btn-save-name").addEventListener("click", async () => {
@@ -189,8 +188,7 @@ async function renderLobby() {
     item.querySelector("button").onclick = async () => {
       await ensureDailyQuestReset(true);
       if ((userData.quests[q.statKey] || 0) < q.target || userData.quests.claimed[q.id]) return renderLobby();
-      userData.coins += q.reward;
-      userData.quests.claimed[q.id] = true;
+      userData.coins += q.reward; userData.quests.claimed[q.id] = true;
       await svc.saveUserProfile(currentUser.uid, userData);
       renderLobby();
     };
@@ -219,13 +217,8 @@ function setChatOpen(open) {
   chatOpen = open;
   chatBox.classList.toggle("hidden", !open);
   chatToggleBtn.classList.toggle("hidden", open);
-  if (open) {
-    unreadChatCount = 0;
-    chatUnread.classList.add("hidden");
-    chatMsgsEl.scrollTop = chatMsgsEl.scrollHeight;
-  }
+  if (open) { unreadChatCount = 0; chatUnread.classList.add("hidden"); chatMsgsEl.scrollTop = chatMsgsEl.scrollHeight; }
 }
-
 chatToggleBtn.addEventListener("click", () => setChatOpen(true));
 document.getElementById("chat-close-btn").addEventListener("click", () => setChatOpen(false));
 document.getElementById("chat-form").addEventListener("submit", async (e) => {
@@ -233,8 +226,7 @@ document.getElementById("chat-form").addEventListener("submit", async (e) => {
   if (!currentUser || !userData) return;
   const txt = chatInput.value.trim();
   if (!txt || Date.now() - lastChatAt < 800) return;
-  lastChatAt = Date.now();
-  chatInput.value = "";
+  lastChatAt = Date.now(); chatInput.value = "";
   await svc.sendChatMessage(currentUser.uid, userData.nickname || "Ngư Thủ", txt);
 });
 
@@ -249,31 +241,56 @@ function initChatUI() {
     ).join("");
     chatMsgsEl.scrollTop = chatMsgsEl.scrollHeight;
     if (initDone && !chatOpen && list.length >= prev) {
-      unreadChatCount++;
-      chatUnread.textContent = unreadChatCount > 9 ? "9+" : unreadChatCount;
-      chatUnread.classList.remove("hidden");
+      unreadChatCount++; chatUnread.textContent = unreadChatCount > 9 ? "9+" : unreadChatCount; chatUnread.classList.remove("hidden");
     }
     initDone = true;
   });
 }
-
 function stopChatUI() { if (chatUnsub) { chatUnsub(); chatUnsub = null; } }
 
-// ==================== DATA-DRIVEN STATS & DOMAIN ====================
+// ==================== STATS & IMMUNITY HELPERS ====================
+function isImmuneToStun(fish) {
+  if (!fish) return false;
+  const ultCfg = getFishConfig(fish.species).ultimate;
+  return fish.ultTimer > 0 && !!ultCfg.domainRadius; // Cá Vua đang bật "Áp chế tuyệt đối" miễn nhiễm choáng
+}
+
+function applyStunToMe(seconds) {
+  if (!myFish || seconds <= 0) return;
+  if (isImmuneToStun(myFish)) {
+    addFloatingText(myFish.x, myFish.y - 40, "👑 KHÁNG CHOÁNG!", "#fde047", 1.05);
+    return;
+  }
+  if (seconds > myFish.stunTimer) {
+    myFish.stunTimer = seconds;
+    addFloatingText(myFish.x, myFish.y - 40, `💫 CHOÁNG ${seconds}s!`, "#facc15", 1.15);
+  }
+}
+
 function getActiveEventConfig() {
   if (!eventState || !eventState.active || Date.now() > eventState.endsAt) return null;
   return getEventConfig(eventState.type);
 }
 
 function getDomainEffects() {
-  if (!myFish) return { suppressed: false, suppressedDebuff: 0, suppressedCount: 0 };
-  let suppressed = false, suppressedDebuff = 0, suppressedCount = 0;
+  if (!myFish) return { suppressed: false, suppressedDebuff: 0, suppressedCount: 0, bossSlowed: false };
+  let suppressed = false, suppressedDebuff = 0, suppressedCount = 0, bossSlowed = false;
 
   Object.values(remotePlayers).forEach(p => {
     const uCfg = getFishConfig(p.species).ultimate;
     if (p.ultActive && uCfg.domainRadius && Math.hypot(p.x - myFish.x, p.y - myFish.y) <= uCfg.domainRadius) {
       suppressed = true;
       suppressedDebuff = Math.max(suppressedDebuff, uCfg.domainDebuff || 0.4);
+    }
+  });
+
+  // Lĩnh vực "Sức mạnh tuyệt đối" của Boss làm giảm 40% tốc chạy toàn bộ cá Boss nhìn thấy
+  const nowMs = Date.now();
+  Object.values(bossesState).forEach(b => {
+    if (b && b.alive && (b.absUntil || 0) > nowMs) {
+      if (Math.hypot(b.x - myFish.x, b.y - myFish.y) <= BOSS_VISION_RADIUS) {
+        bossSlowed = true;
+      }
     }
   });
 
@@ -284,7 +301,7 @@ function getDomainEffects() {
     Object.values(remotePlayers).forEach(p => { if (Math.hypot(p.x - myFish.x, p.y - myFish.y) <= r) suppressedCount++; });
     Object.values(bossesState).forEach(b => { if (b?.alive && Math.hypot(b.x - myFish.x, b.y - myFish.y) <= r) suppressedCount++; });
   }
-  return { suppressed, suppressedDebuff, suppressedCount };
+  return { suppressed, suppressedDebuff, suppressedCount, bossSlowed };
 }
 
 function getEffectiveStats() {
@@ -306,6 +323,9 @@ function getEffectiveStats() {
   if (dom.suppressed) {
     const keep = 1 - dom.suppressedDebuff;
     speedMult *= keep; dmgMult *= keep; maxHpMult *= keep;
+  }
+  if (dom.bossSlowed) {
+    speedMult *= 0.6; // Giảm 40% tốc chạy trong tầm nhìn Boss khi Boss bật Sức mạnh tuyệt đối
   }
   if (dom.suppressedCount > 0) {
     const bonus = 1 + dom.suppressedCount * (fishCfg.ultimate.domainBuffPerEnemy || 0.1);
@@ -350,7 +370,7 @@ async function startMatch() {
     hp: baseHp, baseMaxHp: baseHp, baseSpeed, baseDmg,
     healOnFood: cfg.stats.healOnFood, healOnKill: cfg.stats.healOnKill,
     eatRangeBonus: 1, sizeMult: 1, skillDmgMult: 1, skillCdMult: 1,
-    skillTimer: 0, ultTimer: 0, ultCdTimer: 0, shieldTimer: 3.0,
+    skillTimer: 0, ultTimer: 0, ultCdTimer: 0, shieldTimer: 3.0, stunTimer: 0,
     dashTimer: 0, reflectTimer: 0, biteCooldown: 0, chompTimer: 0,
     buffCounts: {}, joinedAt: Date.now()
   };
@@ -359,8 +379,8 @@ async function startMatch() {
   pendingLevelUps = 0; choosingBuff = false; biteHold = false;
   input.resetJoystick();
   floatingTexts = []; projectiles = []; biteEffects = []; reflectEffects = []; afterimages = [];
-  Object.keys(localBossKillLock).forEach(k => delete localBossKillLock[k]);
-  Object.keys(recentPvpKillReward).forEach(k => delete recentPvpKillReward[k]);
+  handledTornadoIds.clear();
+  [localBossKillLock, recentPvpKillReward, lastVortexHitAt, bossMeleeCooldown].forEach(o => Object.keys(o).forEach(k => delete o[k]));
 
   foods = Array.from({ length: BASE_FOOD_COUNT }, () => spawnFood());
   aiFishes = Array.from({ length: 16 }, (_, i) => spawnAiFish(i));
@@ -390,7 +410,8 @@ async function startMatch() {
       level: myFish.level, tier: myFish.tier, score: myFish.score,
       hp: Math.round(myFish.hp), maxHp: eff.maxHp, sizeMult: myFish.sizeMult,
       shield: myFish.shieldTimer > 0, chomping: myFish.chompTimer > 0,
-      ultActive: myFish.ultTimer > 0, joinedAt: myFish.joinedAt, updatedAt: Date.now()
+      ultActive: myFish.ultTimer > 0, stunned: myFish.stunTimer > 0,
+      joinedAt: myFish.joinedAt, updatedAt: Date.now()
     });
     if (isHost()) {
       const all = [myFish, ...Object.values(remotePlayers)].filter(Boolean);
@@ -429,35 +450,46 @@ function spawnAiFish(idx) {
 }
 
 // ==================== CHIẾN ĐẤU & SKILL ====================
-function handleIncomingPvpHit(hit) {
-  if (!inGame || !myFish) return;
-  if (hit.isReflectFx) reflectEffects.push({ x: myFish.x, y: myFish.y, life: 0.35, maxLife: 0.35 });
-  if (myFish.shieldTimer > 0) return;
+function applyDamageToMe(rawDmg, attackerName, stunDuration = 0, onReflectCallback = null) {
+  if (!inGame || !myFish || myFish.shieldTimer > 0) return false;
 
   const ult = getFishConfig(myFish.species).ultimate;
   if (myFish.ultTimer > 0) {
     if (ult.dodgeChance && Math.random() < ult.dodgeChance) {
       addFloatingText(myFish.x, myFish.y - 34, "💨 Hụt!", "#74c0fc", 1.15);
-      return;
+      return false;
     }
     if (ult.reflectRate) {
       addFloatingText(myFish.x, myFish.y - 34, "🛡️ PHẢN ĐÒN!", "#ffd43b", 1.1);
-      if (hit.fromUid && !hit.isReflectFx) {
-        svc.pushPvpHit(hit.fromUid, { fromUid: myFish.uid, fromName: myFish.name, dmg: Math.round(hit.dmg * ult.reflectRate), crit: false, isReflectFx: true });
-        if (remotePlayers[hit.fromUid]) reflectEffects.push({ x: remotePlayers[hit.fromUid].x, y: remotePlayers[hit.fromUid].y, life: 0.35, maxLife: 0.35 });
-      }
-      return;
+      if (onReflectCallback) onReflectCallback(Math.round(rawDmg * ult.reflectRate));
+      return false;
     }
   }
 
   const eff = getEffectiveStats();
-  const actualDmg = Math.max(1, Math.round(hit.dmg * eff.dmgTakenMult));
+  const actualDmg = Math.max(1, Math.round(rawDmg * eff.dmgTakenMult));
   myFish.hp -= actualDmg;
-  addFloatingText(myFish.x, myFish.y - 30, hit.crit ? `💥 -${actualDmg}` : `-${actualDmg}`, "#ff4d4d", hit.crit ? 1.3 : 1);
-  if (myFish.reflectTimer > 0 && hit.fromUid && !hit.isReflectFx) {
-    svc.pushPvpHit(hit.fromUid, { fromUid: myFish.uid, fromName: myFish.name, dmg: Math.round(actualDmg * 0.6), crit: false, isReflectFx: true });
+  addFloatingText(myFish.x, myFish.y - 30, `-${actualDmg}`, "#ff4d4d", 1);
+
+  if (stunDuration > 0) applyStunToMe(stunDuration);
+  if (myFish.reflectTimer > 0 && onReflectCallback) {
+    onReflectCallback(Math.round(actualDmg * 0.6));
   }
-  if (myFish.hp <= 0) finishMatch(true, `Bị ${hit.fromName || "người chơi khác"} hạ gục!`);
+  if (myFish.hp <= 0) {
+    finishMatch(true, `Bị ${attackerName} hạ gục!`);
+  }
+  return true;
+}
+
+function handleIncomingPvpHit(hit) {
+  if (!inGame || !myFish) return;
+  if (hit.isReflectFx) reflectEffects.push({ x: myFish.x, y: myFish.y, life: 0.35, maxLife: 0.35 });
+  applyDamageToMe(hit.dmg, hit.fromName || "người chơi khác", 0, (refDmg) => {
+    if (hit.fromUid && !hit.isReflectFx) {
+      svc.pushPvpHit(hit.fromUid, { fromUid: myFish.uid, fromName: myFish.name, dmg: refDmg, crit: false, isReflectFx: true });
+      if (remotePlayers[hit.fromUid]) reflectEffects.push({ x: remotePlayers[hit.fromUid].x, y: remotePlayers[hit.fromUid].y, life: 0.35, maxLife: 0.35 });
+    }
+  });
 }
 
 function evaluateBiteHit(bx, by, br, tx, ty, ta, tr) {
@@ -469,7 +501,7 @@ function evaluateBiteHit(bx, by, br, tx, ty, ta, tr) {
 }
 
 function performBite() {
-  if (!inGame || !myFish || choosingBuff || myFish.biteCooldown > 0) return;
+  if (!inGame || !myFish || choosingBuff || myFish.biteCooldown > 0 || myFish.stunTimer > 0) return;
   const eff = getEffectiveStats();
   const fishCfg = getFishConfig(myFish.species);
   myFish.biteCooldown = 0.38;
@@ -523,19 +555,13 @@ function performBite() {
     const res = evaluateBiteHit(bx, by, biteRadius, b.x, b.y, b.angle || 0, getFishRadius(b.level || 10, b.tier || 2, 1.35));
     if (res.hit) {
       const dmg = res.isCrit ? eff.dmg * 2 : eff.dmg;
-      damageBoss(b.id, dmg);
-      if (res.isCrit) {
-        addFloatingText(res.tailX, res.tailY - 35, `💥 CHÍ MẠNG -${Math.round(dmg)}`, "#ff922b", 1.35);
-        biteEffects.push({ x: res.tailX, y: res.tailY, angle: 0, radius: 34, life: 0.24, maxLife: 0.24, critSpark: true });
-      } else {
-        addFloatingText(b.x, b.y - 60, `-${Math.round(dmg)}`, "#ffd43b", 1);
-      }
+      damageBoss(b.id, dmg, res.isCrit, res.tailX, res.tailY);
     }
   });
 }
 
 function triggerBasicSkill() {
-  if (!myFish || myFish.skillTimer > 0 || choosingBuff) return;
+  if (!myFish || myFish.skillTimer > 0 || choosingBuff || myFish.stunTimer > 0) return;
   const cfg = getFishConfig(myFish.species);
   const effStats = getEffectiveStats();
   myFish.skillTimer = cfg.skill.cd * myFish.skillCdMult;
@@ -551,6 +577,9 @@ function triggerUltimateSkill() {
   const cfg = getFishConfig(myFish.species);
   myFish.ultCdTimer = cfg.skill.cd * 3 * myFish.skillCdMult;
   myFish.ultTimer = cfg.ultimate.duration || 10;
+  // Nếu Cá Vua kích hoạt "Áp chế tuyệt đối" -> giải choáng ngay lập tức
+  if (isImmuneToStun(myFish)) myFish.stunTimer = 0;
+
   addToast(`🔥 KÍCH HOẠT: ${cfg.ultimate.name.toUpperCase()}! (${myFish.ultTimer}s)`);
   addFloatingText(myFish.x, myFish.y - 48, `⚡ ${cfg.ultimate.name.toUpperCase()}!`, "#fde047", 1.25);
 }
@@ -567,21 +596,35 @@ function dealAoEDamage(cx, cy, radius, dmg) {
   });
   Object.values(bossesState).forEach(b => {
     if (b?.alive && Math.hypot(b.x - cx, b.y - cy) < radius + 70) {
-      damageBoss(b.id, dmg);
-      addFloatingText(b.x, b.y - 50, `-${Math.round(dmg)}`, "#ffd43b");
+      damageBoss(b.id, dmg, false, b.x, b.y - 50);
     }
   });
 }
 
-function damageBoss(bossId, dmg) {
+function damageBoss(bossId, dmg, isCrit = false, fxX = null, fxY = null) {
   const b = bossesState[bossId];
   if (!b || !b.alive || localBossKillLock[bossId] || !Number.isFinite(dmg) || dmg <= 0) return;
-  svc.runBossDamageTransaction(bossId, currentUser.uid, dmg, (val) => {
-    localBossKillLock[bossId] = true;
-    setTimeout(() => { delete localBossKillLock[bossId]; }, 5000);
-    sessionStats.bossKilled++; sessionStats.coinsEarned += 80;
-    gainExp(350);
-    addToast(`🏆 HẠ GỤC ${(val?.name || "BOSS").toUpperCase()}! (+80 Coin, +350 EXP)`);
+
+  const isAbs = (b.absUntil || 0) > Date.now();
+  if (!isAbs) {
+    if (isCrit && fxX !== null) {
+      addFloatingText(fxX, fxY - 35, `💥 CHÍ MẠNG -${Math.round(dmg)}`, "#ff922b", 1.35);
+      biteEffects.push({ x: fxX, y: fxY, angle: 0, radius: 34, life: 0.24, maxLife: 0.24, critSpark: true });
+    } else {
+      addFloatingText(b.x, b.y - 60, `-${Math.round(dmg)}`, "#ffd43b", 1);
+    }
+  }
+
+  svc.runBossDamageTransaction(bossId, currentUser.uid, dmg, (res) => {
+    if (res.absorbed) {
+      addFloatingText(b.x, b.y - 65, `💚 +${res.healAmount} HP (Hấp thụ)`, "#51cf66", 1.15);
+    } else if (res.killed) {
+      localBossKillLock[bossId] = true;
+      setTimeout(() => { delete localBossKillLock[bossId]; }, 5000);
+      sessionStats.bossKilled++; sessionStats.coinsEarned += 80;
+      gainExp(350);
+      addToast(`🏆 HẠ GỤC ${(res.boss?.name || "BOSS").toUpperCase()}! (+80 Coin, +350 EXP)`);
+    }
   });
 }
 
@@ -616,9 +659,7 @@ function gainExp(amount) {
   const gained = amount * (eff ? eff.expMult : 1);
   if (!Number.isFinite(gained) || gained <= 0) return;
 
-  myFish.exp += gained;
-  myFish.score += gained;
-
+  myFish.exp += gained; myFish.score += gained;
   let safety = 0;
   while (myFish.exp >= myFish.expNeed && safety < 15) {
     safety++;
@@ -626,8 +667,7 @@ function gainExp(amount) {
     myFish.level += 1;
     myFish.expNeed = Math.max(10, Math.round(myFish.expNeed * 1.5));
 
-    const oldTier = myFish.tier;
-    const newTier = getTierFromLevel(myFish.level);
+    const oldTier = myFish.tier, newTier = getTierFromLevel(myFish.level);
     myFish.tier = newTier;
     if (newTier >= 2) sessionStats.reachedTier2 = 1;
 
@@ -693,9 +733,10 @@ function gameLoop(now) {
 
 function updateGame(dt) {
   if (!myFish) return;
-  ["skillTimer", "ultTimer", "ultCdTimer", "shieldTimer", "dashTimer", "reflectTimer", "biteCooldown", "chompTimer"].forEach(k => {
+  ["skillTimer", "ultTimer", "ultCdTimer", "shieldTimer", "stunTimer", "dashTimer", "reflectTimer", "biteCooldown", "chompTimer"].forEach(k => {
     if (myFish[k] > 0) myFish[k] = Math.max(0, myFish[k] - dt);
   });
+  if (isImmuneToStun(myFish)) myFish.stunTimer = 0;
 
   const eff = getEffectiveStats();
   if (myFish.hp > eff.maxHp) myFish.hp = eff.maxHp;
@@ -705,10 +746,12 @@ function updateGame(dt) {
   while (foods.length < desiredFood) foods.push(spawnFood());
   if (foods.length > desiredFood + 25) foods.length = desiredFood;
 
-  if (biteHold && myFish.biteCooldown <= 0) performBite();
+  if (biteHold && myFish.biteCooldown <= 0 && myFish.stunTimer <= 0) performBite();
 
   let moveFactor = 0;
-  if (input.inputMode === "touch") {
+  if (myFish.stunTimer > 0) {
+    moveFactor = 0; // Đang bị choáng -> đứng yên
+  } else if (input.inputMode === "touch") {
     if (input.joystick.active) { myFish.angle = input.joystick.angle; moveFactor = input.joystick.power; }
     else if (myFish.dashTimer > 0) moveFactor = 1;
   } else {
@@ -763,7 +806,7 @@ function updateGame(dt) {
     });
     if (!hit) {
       for (const b of Object.values(bossesState)) {
-        if (b?.alive && Math.hypot(b.x - pr.x, b.y - pr.y) < 90) { damageBoss(b.id, pr.dmg); hit = true; break; }
+        if (b?.alive && Math.hypot(b.x - pr.x, b.y - pr.y) < 90) { damageBoss(b.id, pr.dmg, false, b.x, b.y - 50); hit = true; break; }
       }
     }
     if (hit || pr.life <= 0) projectiles.splice(i, 1);
@@ -782,42 +825,63 @@ function updateGame(dt) {
     ai.x = Math.max(60, Math.min(MAP_SIZE - 60, ai.x + Math.cos(ai.angle) * sp * dt));
     ai.y = Math.max(60, Math.min(MAP_SIZE - 60, ai.y + Math.sin(ai.angle) * sp * dt));
 
-    if (Math.hypot(ai.x - myFish.x, ai.y - myFish.y) < myR + getFishRadius(ai.level, ai.tier, 1) && ai.biteCooldown <= 0 && myFish.shieldTimer <= 0) {
+    if (Math.hypot(ai.x - myFish.x, ai.y - myFish.y) < myR + getFishRadius(ai.level, ai.tier, 1) && ai.biteCooldown <= 0) {
       ai.biteCooldown = 0.75;
       const raw = ai.dmg * (ai.suppressed ? domKeep : 1);
-      if (myFish.ultTimer > 0 && ultCfg.dodgeChance && Math.random() < ultCfg.dodgeChance) {
-        return addFloatingText(myFish.x, myFish.y - 34, "💨 Hụt!", "#74c0fc", 1.15);
-      }
-      if (myFish.ultTimer > 0 && ultCfg.reflectRate) {
+      applyDamageToMe(raw, ai.name, 0, (refDmg) => {
         reflectEffects.push({ x: ai.x, y: ai.y, life: 0.35, maxLife: 0.35 });
-        addFloatingText(myFish.x, myFish.y - 34, "🛡️ PHẢN ĐÒN!", "#ffd43b", 1.1);
-        return damageAiFish(ai, raw * ultCfg.reflectRate, false, ai.x, ai.y);
-      }
-      const dmg = Math.max(1, Math.round(raw * eff.dmgTakenMult));
-      myFish.hp -= dmg;
-      addFloatingText(myFish.x, myFish.y - 30, `-${dmg}`, "#ff6b6b");
-      if (myFish.hp <= 0) finishMatch(true, `Bị ${ai.name} hạ gục!`);
+        damageAiFish(ai, refDmg, false, ai.x, ai.y);
+      });
     }
   });
 
+  // Xử lý 3 Boss: Cận chiến, Lốc xoáy Tầm xa, Vòng xoáy Choáng 5s & Sức mạnh tuyệt đối
+  const nowMs = Date.now();
   Object.values(bossesState).forEach(b => {
     if (!b?.alive) return;
+    const bossR = getFishRadius(b.level || 10, b.tier || 2, 1.35);
     const dist = Math.hypot(b.x - myFish.x, b.y - myFish.y);
     const bossSup = domRadius > 0 && dist <= domRadius;
-    if (dist < myR + getFishRadius(b.level || 10, b.tier || 2, 1.35) && myFish.shieldTimer <= 0 && Math.random() < dt * 1.4) {
-      const raw = b.dmg * (bossSup ? domKeep : 1);
-      if (myFish.ultTimer > 0 && ultCfg.dodgeChance && Math.random() < ultCfg.dodgeChance) {
-        return addFloatingText(myFish.x, myFish.y - 34, "💨 Hụt!", "#74c0fc", 1.15);
+
+    const isHungry = (b.hungryUntil || 0) > nowMs;
+    const isAbs = (b.absUntil || 0) > nowMs;
+    const hungryMult = isHungry ? 1.5 : 1.0;
+
+    // A. Skill "Chạy đâu cho thoát": Đụng vào vòng xoáy -> Choáng 5s (Cá Vua bật lĩnh vực miễn choáng)
+    if ((b.vortexUntil || 0) > nowMs && dist <= BOSS_VORTEX_RADIUS + myR) {
+      if (lastVortexHitAt[b.id] !== b.vortexStartedAt) {
+        lastVortexHitAt[b.id] = b.vortexStartedAt;
+        applyStunToMe(5.0);
       }
-      if (myFish.ultTimer > 0 && ultCfg.reflectRate) {
+    }
+
+    // B. Tấn công Cận chiến (và Lao tới gây choáng khi bật "Sức mạnh tuyệt đối")
+    const meleeRange = (bossR + myR + 28) * hungryMult;
+    if (dist <= meleeRange && nowMs >= (bossMeleeCooldown[b.id] || 0)) {
+      bossMeleeCooldown[b.id] = nowMs + 1150;
+      const rawDmg = b.dmg * (isAbs ? 1.5 : 1.0) * (bossSup ? domKeep : 1.0);
+      const stunDur = isAbs ? 2.5 : 0;
+      const didDeal = applyDamageToMe(rawDmg, b.name, stunDur, (refDmg) => {
         reflectEffects.push({ x: b.x, y: b.y, life: 0.35, maxLife: 0.35 });
-        addFloatingText(myFish.x, myFish.y - 34, "🛡️ PHẢN ĐÒN!", "#ffd43b", 1.1);
-        return damageBoss(b.id, raw * ultCfg.reflectRate);
+        damageBoss(b.id, refDmg, false, b.x, b.y - 50);
+      });
+      if (didDeal) svc.notifyBossDealtDamage(b.id);
+    }
+
+    // C. Tấn công Tầm xa (Lốc xoáy dưới chân người chơi)
+    if (b.rangedStrike && nowMs >= b.rangedStrike.triggerAt && nowMs <= b.rangedStrike.expiresAt) {
+      if (!handledTornadoIds.has(b.rangedStrike.id)) {
+        handledTornadoIds.add(b.rangedStrike.id);
+        const dTor = Math.hypot(b.rangedStrike.x - myFish.x, b.rangedStrike.y - myFish.y);
+        if (dTor <= b.rangedStrike.radius + myR) {
+          const rawTorDmg = b.rangedStrike.dmg * (bossSup ? domKeep : 1.0);
+          const didDeal = applyDamageToMe(rawTorDmg, `${b.name} (Lốc xoáy)`, b.rangedStrike.stun || 0, (refDmg) => {
+            reflectEffects.push({ x: b.x, y: b.y, life: 0.35, maxLife: 0.35 });
+            damageBoss(b.id, refDmg, false, b.x, b.y - 50);
+          });
+          if (didDeal) svc.notifyBossDealtDamage(b.id);
+        }
       }
-      const dmg = Math.max(1, Math.round(raw * eff.dmgTakenMult));
-      myFish.hp -= dmg;
-      addFloatingText(myFish.x, myFish.y - 30, `-${dmg}`, "#ff3b3b");
-      if (myFish.hp <= 0) finishMatch(true, `Bị ${b.name} nghiền nát!`);
     }
   });
 
