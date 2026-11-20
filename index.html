@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Thủy Cung Vạn Cân - Đại Chiến Tiến Hóa</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- MÀN HÌNH ĐĂNG NHẬP -->
+  <div id="login-screen" class="screen active">
+    <div class="ocean-bg-decor"></div>
+    <div class="card login-card">
+      <div class="game-badge">ONLINE MULTIPLAYER</div>
+      <h1 class="game-title">THỦY CUNG <span>VẠN CÂN</span></h1>
+      <p class="subtitle">Săn mồi • Tiến hóa Bá Khí • Hạ gục Boss Thủy Cung</p>
+      <button id="btn-google-login" class="btn-google">
+        <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" />
+        Đăng nhập bằng Google
+      </button>
+      <p id="login-status" class="status-text"></p>
+    </div>
+  </div>
+
+  <!-- MÀN HÌNH SẢNH CHÍNH (LOBBY) -->
+  <div id="lobby-screen" class="screen">
+    <div class="lobby-header">
+      <div class="player-profile">
+        <img id="user-avatar" src="" alt="Avatar" />
+        <div class="name-box">
+          <input type="text" id="input-nickname" maxlength="16" placeholder="Nhập tên trong game..." />
+          <button id="btn-save-name" class="btn-small">Lưu tên</button>
+        </div>
+      </div>
+      <div class="header-right">
+        <div class="coin-box">🪙 <span id="lobby-coins">0</span> Coin</div>
+        <button id="btn-logout" class="btn-outline">Đăng xuất</button>
+      </div>
+    </div>
+
+    <div class="lobby-grid">
+      <!-- CỘT TRÁI: CHỌN CÁ -->
+      <div class="panel fish-panel">
+        <h2>🐟 Chọn Loài Cá</h2>
+        <div id="fish-list" class="fish-grid"></div>
+      </div>
+
+      <!-- CỘT GIỮA: VÀO GAME & NÂNG CẤP -->
+      <div class="panel center-panel">
+        <h2>⚡ Nâng Cấp Chỉ Số Khởi Đầu</h2>
+        <div id="upgrade-list" class="upgrade-list"></div>
+
+        <div class="play-zone">
+          <div id="selected-fish-summary" class="selected-summary"></div>
+          <button id="btn-play" class="btn-play">VÀO THỦY CUNG CHIẾN ĐẤU</button>
+          <p class="controls-hint">Di chuyển: <b>Chuột</b> | Dùng Skill: <b>Space / Chuột phải</b></p>
+        </div>
+      </div>
+
+      <!-- CỘT PHẢI: NHIỆM VỤ & BXH -->
+      <div class="panel quest-panel">
+        <h2>📜 Bảng Nhiệm Vụ</h2>
+        <div id="quest-list" class="quest-list"></div>
+
+        <h2 style="margin-top: 16px;">🏆 Vinh Danh Top Cao Thủ</h2>
+        <div id="lobby-leaderboard" class="mini-lb"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MÀN HÌNH TRONG GAME -->
+  <div id="game-screen" class="screen">
+    <canvas id="game-canvas"></canvas>
+
+    <!-- GÓC TRÊN TRÁI: NÚT 3 GẠCH + MINIMAP -->
+    <div class="hud-top-left">
+      <button id="btn-menu-exit" class="btn-hamburger" title="Menu / Thoát ván đấu">
+        <span></span><span></span><span></span>
+      </button>
+      <div class="minimap-wrap">
+        <canvas id="minimap-canvas" width="150" height="150"></canvas>
+        <div class="minimap-legend">
+          <span class="dot red"></span>Boss
+          <span class="dot yellow"></span>Người chơi
+          <span>👑</span>Top 1
+        </div>
+      </div>
+    </div>
+
+    <!-- MENU THOÁT VÁN ĐẤU -->
+    <div id="exit-modal" class="modal hidden">
+      <div class="modal-box">
+        <h3>Tạm dừng / Thoát trận</h3>
+        <p>Tiến trình nhiệm vụ và Coin kiếm được sẽ được lưu lại.</p>
+        <div class="modal-actions">
+          <button id="btn-resume" class="btn-small">Tiếp tục chơi</button>
+          <button id="btn-confirm-exit" class="btn-danger">Thoát ra sảnh</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- GÓC TRÊN PHẢI: BẢNG XẾP HẠNG TRONG TRẬN -->
+    <div class="hud-top-right">
+      <div class="leaderboard-box">
+        <div class="lb-title">🏆 Bảng Xếp Hạng</div>
+        <div id="ingame-leaderboard"></div>
+      </div>
+      <div id="boss-timer-banner" class="boss-banner">Boss: Đang hoạt động</div>
+    </div>
+
+    <!-- THÔNG BÁO KILL / TIẾN HÓA -->
+    <div id="toast-container"></div>
+
+    <!-- CHỌN 1 TRONG 3 BUFF KHI TIẾN HÓA -->
+    <div id="buff-modal" class="buff-overlay hidden">
+      <div class="buff-header">
+        <h2>✨ TIẾN HÓA THÀNH CÔNG! ✨</h2>
+        <p>Chọn 1 Buff cường hóa sức mạnh (Đang được bảo vệ 4 giây)</p>
+      </div>
+      <div id="buff-choices" class="buff-cards"></div>
+    </div>
+
+    <!-- PHÍA DƯỚI NGAY GIỮA: MÁU, EXP, TIẾN HÓA, BUFF, SKILL -->
+    <div class="hud-bottom-center">
+      <div id="active-buffs-bar" class="active-buffs"></div>
+      <div class="evo-label" id="hud-evo-info">Bậc 1: Cá Con Tập Sự</div>
+
+      <div class="bars-row">
+        <div class="skill-box" id="hud-skill-box">
+          <div class="skill-key">SPACE</div>
+          <div class="skill-name" id="hud-skill-name">Skill</div>
+          <div class="skill-cd-overlay" id="hud-skill-cd"></div>
+        </div>
+
+        <div class="stat-bars">
+          <div class="bar-wrap hp-wrap">
+            <div class="bar-fill hp-fill" id="hud-hp-fill"></div>
+            <span class="bar-text" id="hud-hp-text">100 / 100</span>
+          </div>
+          <div class="bar-wrap exp-wrap">
+            <div class="bar-fill exp-fill" id="hud-exp-fill"></div>
+            <span class="bar-text" id="hud-exp-text">EXP: 0 / 100</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MÀN HÌNH KẾT THÚC / TỬ VONG -->
+  <div id="death-modal" class="modal hidden">
+    <div class="modal-box death-box">
+      <h2 id="death-title">💀 BẠN ĐÃ BỊ NUỐT CHỬNG!</h2>
+      <div id="death-summary" class="death-summary"></div>
+      <button id="btn-back-lobby" class="btn-play">Về Sảnh & Cập Nhật Nhiệm Vụ</button>
+    </div>
+  </div>
+
+  <script type="module" src="game.js"></script>
+</body>
+</html>
