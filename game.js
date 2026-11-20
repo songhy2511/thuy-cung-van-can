@@ -23,10 +23,11 @@ const FISH_TYPES = {
     dmgMult: 1.20,
     speedMult: 1.0,
     dmgTakenMult: 1.0,
-    healOnEat: 0,
+    healOnFood: 1,
+    healOnKill: 0,
     skillName: "Kiếm Đâm",
     skillCd: 5.0,
-    desc: "Sát thương +20%. Skill: Lướt đâm xuyên gây sát thương lớn."
+    desc: "Sát thương +20%. Hồi 1 HP khi ăn mồi. Skill: Lướt đâm xuyên gây sát thương lớn."
   },
   turtle: {
     id: "turtle",
@@ -38,10 +39,11 @@ const FISH_TYPES = {
     dmgMult: 1.0,
     speedMult: 0.95,
     dmgTakenMult: 0.80, // Giảm 20% sát thương nhận vào
-    healOnEat: 0,
+    healOnFood: 1,
+    healOnKill: 0,
     skillName: "Mai Bất Tử",
     skillCd: 7.0,
-    desc: "Giảm 20% sát thương nhận vào. Skill: Bật giáp gai phản sát thương."
+    desc: "Giảm 20% ST nhận vào. Hồi 1 HP khi ăn mồi. Skill: Bật giáp gai phản sát thương."
   },
   butterfish: {
     id: "butterfish",
@@ -53,10 +55,11 @@ const FISH_TYPES = {
     dmgMult: 1.0,
     speedMult: 1.20,
     dmgTakenMult: 1.0,
-    healOnEat: 0,
+    healOnFood: 1,
+    healOnKill: 0,
     skillName: "Lướt Sóng",
     skillCd: 4.5,
-    desc: "Tốc độ bơi +20%. Skill: Tăng tốc cực đại & phóng thủy tiễn."
+    desc: "Tốc độ bơi +20%. Hồi 1 HP khi ăn mồi. Skill: Tăng tốc cực đại & phóng thủy tiễn."
   },
   kingfish: {
     id: "kingfish",
@@ -68,7 +71,8 @@ const FISH_TYPES = {
     dmgMult: 1.15,
     speedMult: 1.15,
     dmgTakenMult: 0.85, // Giảm 15% sát thương nhận vào
-    healOnEat: 5,
+    healOnFood: 5,
+    healOnKill: 5,
     skillName: "Hoàng Uy",
     skillCd: 5.5,
     desc: "Giá 100 Coin/ván. ST +15%, Tốc độ +15%, Giảm ST nhận 15%, Hồi 5 HP khi ăn mồi/nuốt cá."
@@ -88,7 +92,7 @@ const BUFF_POOL = [
   { id: "speed", icon: "⚡", name: "Thủy Lưu", desc: "+12% tốc độ bơi" },
   { id: "maxHp", icon: "❤️", name: "Sinh Mệnh", desc: "+25% Máu tối đa" },
   { id: "biteDmg", icon: "🦷", name: "Răng Sắc", desc: "+18% sát thương cắn" },
-  { id: "size", icon: "🐋", name: "Khổng Lồ", desc: "+12% kích cỡ ngoại hình" },
+  { id: "size", icon: "🐋", name: "Khổng Lồ", desc: "+12% kích cỡ & tầm cắn" },
   { id: "skillDmg", icon: "💥", name: "Cuồng Nộ", desc: "+25% sát thương Skill" },
   { id: "skillCd", icon: "⏱️", name: "Linh Hoạt", desc: "-15% hồi chiêu Skill" }
 ];
@@ -298,14 +302,15 @@ let foods = [];
 let bubbles = [];
 let floatingTexts = [];
 let projectiles = [];
+let biteEffects = [];
 let bossState = null;
 let mousePos = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+let leftMouseDown = false;
 let camera = { x: MAP_SIZE / 2, y: MAP_SIZE / 2 };
 let sessionStats = { foodEaten: 0, fishKilled: 0, bossKilled: 0, reachedTier3: 0, coinsEarned: 0 };
 let pendingLevelUps = 0;
 let choosingBuff = false;
 
-// Khởi tạo bong bóng và san hô nền thủy cung
 const corals = Array.from({ length: 45 }, () => ({
   x: Math.random() * MAP_SIZE,
   y: Math.random() * MAP_SIZE,
@@ -352,13 +357,14 @@ async function startMatch() {
     speed: baseSpeed,
     dmg: baseDmg,
     dmgTakenMult: fishCfg.dmgTakenMult,
-    healOnEat: fishCfg.healOnEat,
+    healOnFood: fishCfg.healOnFood,
+    healOnKill: fishCfg.healOnKill,
     eatRangeBonus: 1,
     sizeMult: 1,
     skillDmgMult: 1,
     skillCdMult: 1,
     skillTimer: 0,
-    shieldTimer: 3.0, // Bất tử 3s lúc mới vào
+    shieldTimer: 3.0,
     dashTimer: 0,
     reflectTimer: 0,
     biteCooldown: 0,
@@ -369,10 +375,11 @@ async function startMatch() {
   sessionStats = { foodEaten: 0, fishKilled: 0, bossKilled: 0, reachedTier3: 0, coinsEarned: 0 };
   pendingLevelUps = 0;
   choosingBuff = false;
+  leftMouseDown = false;
   floatingTexts = [];
   projectiles = [];
+  biteEffects = [];
 
-  // Tạo mồi & AI cá cho thủy cung sống động
   foods = Array.from({ length: 240 }, () => spawnFood());
   aiFishes = Array.from({ length: 16 }, (_, i) => spawnAiFish(i));
   bubbles = Array.from({ length: 60 }, () => ({
@@ -434,7 +441,6 @@ function connectRealtimeRoom() {
   const myRef = ref(db, `rooms/main/players/${currentUser.uid}`);
   onDisconnect(myRef).remove();
 
-  // Lắng nghe người chơi khác
   const playersRef = ref(db, "rooms/main/players");
   unsubListeners.push(onValue(playersRef, (snap) => {
     const data = snap.val() || {};
@@ -442,7 +448,6 @@ function connectRealtimeRoom() {
     remotePlayers = data;
   }));
 
-  // Lắng nghe sát thương từ người chơi khác đánh vào mình
   const hitsRef = ref(db, `rooms/main/hits/${currentUser.uid}`);
   onDisconnect(hitsRef).remove();
   unsubListeners.push(onChildAdded(hitsRef, (snap) => {
@@ -452,16 +457,15 @@ function connectRealtimeRoom() {
     if (myFish.shieldTimer > 0) return;
     const actualDmg = Math.max(1, Math.round(hit.dmg * myFish.dmgTakenMult));
     myFish.hp -= actualDmg;
-    addFloatingText(myFish.x, myFish.y - 30, `-${actualDmg}`, "#ff4d4d");
+    addFloatingText(myFish.x, myFish.y - 30, hit.crit ? `💥 -${actualDmg}` : `-${actualDmg}`, "#ff4d4d", hit.crit ? 1.3 : 1);
     if (myFish.reflectTimer > 0 && hit.fromUid) {
-      sendPvpHit(hit.fromUid, actualDmg * 0.6);
+      sendPvpHit(hit.fromUid, actualDmg * 0.6, false);
     }
     if (myFish.hp <= 0) {
       handleDeath(`Bị ${hit.fromName || "người chơi khác"} nuốt chửng!`);
     }
   }));
 
-  // Lắng nghe trạng thái Boss Thủy Cung
   const bossRef = ref(db, "rooms/main/boss");
   unsubListeners.push(onValue(bossRef, (snap) => {
     bossState = snap.val();
@@ -470,7 +474,6 @@ function connectRealtimeRoom() {
     }
   }));
 
-  // Đồng bộ vị trí lên server 15 lần/giây
   syncIntervalId = setInterval(() => {
     if (!inGame || !myFish) return;
     set(myRef, {
@@ -490,7 +493,6 @@ function connectRealtimeRoom() {
       updatedAt: Date.now()
     });
 
-    // Host điều khiển AI Boss & hồi sinh Boss sau 1 phút
     if (isRoomHost()) {
       hostUpdateBoss();
     }
@@ -539,7 +541,6 @@ function hostUpdateBoss() {
     }
     return;
   }
-  // Boss di chuyển tuần tra hoặc đuổi theo người chơi gần nhất
   const players = [myFish, ...Object.values(remotePlayers)].filter(Boolean);
   let target = null, minDist = 650;
   players.forEach(p => {
@@ -552,11 +553,10 @@ function hostUpdateBoss() {
   } else if (Math.random() < 0.08) {
     angle += (Math.random() - 0.5) * 1.2;
   }
-  const speed = 13; // mỗi tick 66ms
+  const speed = 13;
   const nx = Math.max(150, Math.min(MAP_SIZE - 150, bossState.x + Math.cos(angle) * speed));
   const ny = Math.max(150, Math.min(MAP_SIZE - 150, bossState.y + Math.sin(angle) * speed));
 
-  // Cập nhật bậc Boss nếu có người chơi vượt cấp
   const desiredTier = getHighestPlayerTier() + 1;
   update(ref(db, "rooms/main/boss"), {
     x: Math.round(nx),
@@ -582,7 +582,6 @@ function damageBoss(dmg) {
   }).then((res) => {
     const val = res.snapshot.val();
     if (val && !val.alive && val.lastHitBy === currentUser.uid) {
-      // Mình hạ gục Boss!
       sessionStats.bossKilled += 1;
       sessionStats.coinsEarned += 80;
       gainExp(350);
@@ -591,12 +590,13 @@ function damageBoss(dmg) {
   });
 }
 
-function sendPvpHit(targetUid, dmg) {
+function sendPvpHit(targetUid, dmg, isCrit = false) {
   const hitId = currentUser.uid + "_" + Date.now() + "_" + Math.floor(Math.random() * 999);
   set(ref(db, `rooms/main/hits/${targetUid}/${hitId}`), {
     fromUid: currentUser.uid,
     fromName: myFish.name,
-    dmg: Math.round(dmg)
+    dmg: Math.round(dmg),
+    crit: isCrit
   });
 }
 
@@ -609,15 +609,28 @@ function disconnectRealtimeRoom() {
   }
 }
 
-// ==================== ĐIỀU KHIỂN & SKILL ====================
+// ==================== ĐIỀU KHIỂN: CẮN CHUỘT TRÁI & SKILL ====================
 canvas.addEventListener("mousemove", (e) => {
   mousePos.x = e.clientX;
   mousePos.y = e.clientY;
 });
+
+canvas.addEventListener("mousedown", (e) => {
+  if (e.button === 0) {
+    leftMouseDown = true;
+    performBite();
+  }
+});
+
+window.addEventListener("mouseup", (e) => {
+  if (e.button === 0) leftMouseDown = false;
+});
+
 canvas.addEventListener("contextmenu", (e) => {
   e.preventDefault();
   triggerSkill();
 });
+
 window.addEventListener("keydown", (e) => {
   if (!inGame) return;
   if (e.code === "Space") {
@@ -630,6 +643,110 @@ window.addEventListener("keydown", (e) => {
     if (cards[idx]) cards[idx].click();
   }
 });
+
+// ==================== HÀM CẮN & ĐÁNH GIÁ ĐIỂM YẾU ĐUÔI ====================
+function evaluateBiteHit(biteX, biteY, biteRadius, targetX, targetY, targetAngle, targetRadius) {
+  const dCenter = Math.hypot(targetX - biteX, targetY - biteY);
+  const tailX = targetX - Math.cos(targetAngle) * targetRadius * 0.95;
+  const tailY = targetY - Math.sin(targetAngle) * targetRadius * 0.95;
+  const headX = targetX + Math.cos(targetAngle) * targetRadius * 0.95;
+  const headY = targetY + Math.sin(targetAngle) * targetRadius * 0.95;
+
+  const dTail = Math.hypot(tailX - biteX, tailY - biteY);
+  const dHead = Math.hypot(headX - biteX, headY - biteY);
+
+  const hit = dCenter <= biteRadius + targetRadius || dTail <= biteRadius + targetRadius * 0.55;
+  if (!hit) return { hit: false, isCrit: false, tailX, tailY };
+
+  // Chí mạng khi cắn trúng vùng đuôi (và tâm cú cắn gần đuôi hơn gần đầu)
+  const isCrit = dTail <= biteRadius + targetRadius * 0.65 && dTail < dHead;
+  return { hit: true, isCrit, tailX, tailY };
+}
+
+function performBite() {
+  if (!inGame || !myFish || choosingBuff || myFish.biteCooldown > 0) return;
+
+  myFish.biteCooldown = 0.38;
+  const myRadius = getFishRadius(myFish.tier, myFish.sizeMult);
+
+  // Tầm cắn tỷ lệ thuận với kích thước cá
+  const biteDist = myRadius * 0.95;
+  const biteRadius = myRadius * 0.88;
+  const biteX = myFish.x + Math.cos(myFish.angle) * biteDist;
+  const biteY = myFish.y + Math.sin(myFish.angle) * biteDist;
+
+  // Hiệu ứng vệt cắn trước miệng
+  biteEffects.push({
+    x: biteX,
+    y: biteY,
+    angle: myFish.angle,
+    radius: biteRadius,
+    life: 0.16,
+    maxLife: 0.16,
+    critSpark: false
+  });
+
+  // 1. Cắn AI Cá
+  for (let i = aiFishes.length - 1; i >= 0; i--) {
+    const ai = aiFishes[i];
+    const aiR = getFishRadius(ai.tier, 1);
+    const res = evaluateBiteHit(biteX, biteY, biteRadius, ai.x, ai.y, ai.angle, aiR);
+    if (res.hit) {
+      const dmg = res.isCrit ? myFish.dmg * 2.0 : myFish.dmg;
+      damageAiFish(ai, dmg, res.isCrit, res.tailX, res.tailY);
+    }
+  }
+
+  // 2. Cắn Người chơi khác (PvP)
+  Object.values(remotePlayers).forEach(p => {
+    const pR = getFishRadius(p.tier || 1, p.sizeMult || 1);
+    const res = evaluateBiteHit(biteX, biteY, biteRadius, p.x, p.y, p.angle || 0, pR);
+    if (res.hit) {
+      const dmg = res.isCrit ? myFish.dmg * 2.0 : myFish.dmg;
+      sendPvpHit(p.uid, dmg, res.isCrit);
+      if (res.isCrit) {
+        addFloatingText(res.tailX, res.tailY - 24, `💥 CHÍ MẠNG -${Math.round(dmg)}`, "#ff922b", 1.25);
+        spawnCritBurst(res.tailX, res.tailY);
+      } else {
+        addFloatingText(p.x, p.y - 30, `-${Math.round(dmg)}`, "#ffd43b", 1);
+      }
+
+      if ((p.hp || 100) <= dmg) {
+        sessionStats.fishKilled += 1;
+        sessionStats.coinsEarned += 15;
+        gainExp(90 + (p.tier || 1) * 40);
+        if (myFish.healOnKill > 0 && myFish.hp < myFish.maxHp) {
+          const healed = Math.min(myFish.healOnKill, myFish.maxHp - myFish.hp);
+          myFish.hp += healed;
+          addFloatingText(myFish.x, myFish.y - 25, `+${Math.round(healed)} HP`, "#51cf66", 1);
+        }
+        addToast(`🔥 Bạn vừa nuốt chửng ${p.name}! (+15 Coin)`);
+      }
+    }
+  });
+
+  // 3. Cắn Boss Thủy Cung
+  if (bossState && bossState.alive) {
+    const bossR = getFishRadius(bossState.tier, 1.35);
+    const res = evaluateBiteHit(biteX, biteY, biteRadius, bossState.x, bossState.y, bossState.angle || 0, bossR);
+    if (res.hit) {
+      const dmg = res.isCrit ? myFish.dmg * 2.0 : myFish.dmg;
+      damageBoss(dmg);
+      if (res.isCrit) {
+        addFloatingText(res.tailX, res.tailY - 35, `💥 CHÍ MẠNG -${Math.round(dmg)}`, "#ff922b", 1.35);
+        spawnCritBurst(res.tailX, res.tailY);
+      } else {
+        addFloatingText(bossState.x, bossState.y - 60, `-${Math.round(dmg)}`, "#ffd43b", 1);
+      }
+    }
+  }
+}
+
+function spawnCritBurst(x, y) {
+  biteEffects.push({
+    x, y, angle: 0, radius: 34, life: 0.24, maxLife: 0.24, critSpark: true
+  });
+}
 
 function triggerSkill() {
   if (!myFish || myFish.skillTimer > 0 || choosingBuff) return;
@@ -662,12 +779,12 @@ function triggerSkill() {
 function dealAoEDamage(cx, cy, radius, dmg) {
   aiFishes.forEach(ai => {
     if (Math.hypot(ai.x - cx, ai.y - cy) < radius) {
-      damageAiFish(ai, dmg);
+      damageAiFish(ai, dmg, false, ai.x, ai.y);
     }
   });
   Object.values(remotePlayers).forEach(p => {
     if (Math.hypot(p.x - cx, p.y - cy) < radius) {
-      sendPvpHit(p.uid, dmg);
+      sendPvpHit(p.uid, dmg, false);
     }
   });
   if (bossState && bossState.alive && Math.hypot(bossState.x - cx, bossState.y - cy) < radius + 70) {
@@ -695,12 +812,16 @@ function gameLoop(now) {
 function updateGame(dt) {
   if (!myFish) return;
 
-  // Timers
   if (myFish.skillTimer > 0) myFish.skillTimer = Math.max(0, myFish.skillTimer - dt);
   if (myFish.shieldTimer > 0) myFish.shieldTimer = Math.max(0, myFish.shieldTimer - dt);
   if (myFish.dashTimer > 0) myFish.dashTimer = Math.max(0, myFish.dashTimer - dt);
   if (myFish.reflectTimer > 0) myFish.reflectTimer = Math.max(0, myFish.reflectTimer - dt);
   if (myFish.biteCooldown > 0) myFish.biteCooldown = Math.max(0, myFish.biteCooldown - dt);
+
+  // Giữ chuột trái để cắn liên tục theo tốc độ hồi cắn
+  if (leftMouseDown && myFish.biteCooldown <= 0) {
+    performBite();
+  }
 
   // Di chuyển theo chuột
   const dx = mousePos.x - canvas.width / 2;
@@ -718,22 +839,22 @@ function updateGame(dt) {
 
   const myRadius = getFishRadius(myFish.tier, myFish.sizeMult);
 
-  // Ăn mồi
+  // Ăn mồi & Hồi máu (1 HP cho cá thường, 5 HP cho Cá Của Vua)
   const eatRadius = (myRadius + 24) * myFish.eatRangeBonus;
   for (let i = foods.length - 1; i >= 0; i--) {
     const f = foods[i];
     const d = Math.hypot(f.x - myFish.x, f.y - myFish.y);
     if (d < eatRadius) {
-      // Hút nhẹ về miệng nếu nằm trong phạm vi ăn mồi mở rộng
       if (d > myRadius) {
         f.x += (myFish.x - f.x) * 0.25;
         f.y += (myFish.y - f.y) * 0.25;
       } else {
         gainExp(f.val);
         sessionStats.foodEaten += 1;
-        if (myFish.healOnEat > 0) {
-          myFish.hp = Math.min(myFish.maxHp, myFish.hp + myFish.healOnEat);
-          addFloatingText(myFish.x, myFish.y - 25, `+${myFish.healOnEat} HP`, "#51cf66");
+        if (myFish.healOnFood > 0 && myFish.hp < myFish.maxHp) {
+          const healed = Math.min(myFish.healOnFood, myFish.maxHp - myFish.hp);
+          myFish.hp += healed;
+          addFloatingText(myFish.x, myFish.y - 25, `+${Math.round(healed)} HP`, "#51cf66", 0.85);
         }
         foods.splice(i, 1);
         foods.push(spawnFood());
@@ -741,7 +862,7 @@ function updateGame(dt) {
     }
   }
 
-  // Cập nhật đạn kỹ năng (Cá chim)
+  // Đạn kỹ năng (Cá chim)
   for (let i = projectiles.length - 1; i >= 0; i--) {
     const pr = projectiles[i];
     pr.x += pr.vx * dt;
@@ -750,7 +871,7 @@ function updateGame(dt) {
     let hit = false;
     aiFishes.forEach(ai => {
       if (!hit && Math.hypot(ai.x - pr.x, ai.y - pr.y) < getFishRadius(ai.tier, 1) + 14) {
-        damageAiFish(ai, pr.dmg);
+        damageAiFish(ai, pr.dmg, false, ai.x, ai.y);
         hit = true;
       }
     });
@@ -761,8 +882,8 @@ function updateGame(dt) {
     if (hit || pr.life <= 0) projectiles.splice(i, 1);
   }
 
-  // Cập nhật AI cá & va chạm
-  aiFishes.forEach((ai, idx) => {
+  // AI Cá di chuyển & tấn công ngược lại người chơi (người chơi phải tự bấm chuột trái để cắn lại)
+  aiFishes.forEach(ai => {
     if (ai.biteCooldown > 0) ai.biteCooldown -= dt;
     ai.aiTimer -= dt;
     if (ai.aiTimer <= 0) {
@@ -774,59 +895,31 @@ function updateGame(dt) {
 
     const aiR = getFishRadius(ai.tier, 1);
     const d = Math.hypot(ai.x - myFish.x, ai.y - myFish.y);
-    if (d < myRadius + aiR) {
-      if (myFish.biteCooldown <= 0) {
-        myFish.biteCooldown = 0.42;
-        damageAiFish(ai, myFish.dmg);
-      }
-      if (ai.biteCooldown <= 0 && myFish.shieldTimer <= 0) {
-        ai.biteCooldown = 0.65;
-        const dmg = Math.max(1, Math.round(ai.dmg * myFish.dmgTakenMult));
-        myFish.hp -= dmg;
-        addFloatingText(myFish.x, myFish.y - 30, `-${dmg}`, "#ff6b6b");
-        if (myFish.hp <= 0) handleDeath(`Bị ${ai.name} hạ gục!`);
-      }
+    if (d < myRadius + aiR && ai.biteCooldown <= 0 && myFish.shieldTimer <= 0) {
+      ai.biteCooldown = 0.75;
+      const dmg = Math.max(1, Math.round(ai.dmg * myFish.dmgTakenMult));
+      myFish.hp -= dmg;
+      addFloatingText(myFish.x, myFish.y - 30, `-${dmg}`, "#ff6b6b");
+      if (myFish.hp <= 0) handleDeath(`Bị ${ai.name} hạ gục!`);
     }
   });
 
-  // Va chạm PvP với người chơi khác
-  if (myFish.biteCooldown <= 0) {
-    for (const p of Object.values(remotePlayers)) {
-      const pR = getFishRadius(p.tier || 1, p.sizeMult || 1);
-      if (Math.hypot(p.x - myFish.x, p.y - myFish.y) < myRadius + pR) {
-        myFish.biteCooldown = 0.45;
-        sendPvpHit(p.uid, myFish.dmg);
-        addFloatingText(p.x, p.y - 30, `-${Math.round(myFish.dmg)}`, "#ffd43b");
-        if ((p.hp || 100) <= myFish.dmg) {
-          // Ghi nhận hạ gục
-          sessionStats.fishKilled += 1;
-          sessionStats.coinsEarned += 15;
-          gainExp(90 + (p.tier || 1) * 40);
-          if (myFish.healOnEat > 0) myFish.hp = Math.min(myFish.maxHp, myFish.hp + myFish.healOnEat);
-          addToast(`🔥 Bạn vừa nuốt chửng ${p.name}! (+15 Coin)`);
-        }
-        break;
-      }
-    }
-  }
-
-  // Va chạm với Boss
+  // Boss tấn công người chơi khi áp sát
   if (bossState && bossState.alive) {
     const bossR = getFishRadius(bossState.tier, 1.35);
     const distBoss = Math.hypot(bossState.x - myFish.x, bossState.y - myFish.y);
-    if (distBoss < myRadius + bossR) {
-      if (myFish.biteCooldown <= 0) {
-        myFish.biteCooldown = 0.45;
-        damageBoss(myFish.dmg);
-        addFloatingText(bossState.x, bossState.y - 60, `-${Math.round(myFish.dmg)}`, "#ffd43b");
-      }
-      if (myFish.shieldTimer <= 0 && Math.random() < dt * 1.4) {
-        const bDmg = Math.max(1, Math.round(bossState.dmg * myFish.dmgTakenMult));
-        myFish.hp -= bDmg;
-        addFloatingText(myFish.x, myFish.y - 30, `-${bDmg}`, "#ff3b3b");
-        if (myFish.hp <= 0) handleDeath("Bị Boss Thủy Cung nghiền nát!");
-      }
+    if (distBoss < myRadius + bossR && myFish.shieldTimer <= 0 && Math.random() < dt * 1.4) {
+      const bDmg = Math.max(1, Math.round(bossState.dmg * myFish.dmgTakenMult));
+      myFish.hp -= bDmg;
+      addFloatingText(myFish.x, myFish.y - 30, `-${bDmg}`, "#ff3b3b");
+      if (myFish.hp <= 0) handleDeath("Bị Boss Thủy Cung nghiền nát!");
     }
+  }
+
+  // Hiệu ứng vệt cắn
+  for (let i = biteEffects.length - 1; i >= 0; i--) {
+    biteEffects[i].life -= dt;
+    if (biteEffects[i].life <= 0) biteEffects.splice(i, 1);
   }
 
   // Bong bóng & chữ bay
@@ -841,15 +934,23 @@ function updateGame(dt) {
   }
 }
 
-function damageAiFish(ai, dmg) {
+function damageAiFish(ai, dmg, isCrit = false, fxX = ai.x, fxY = ai.y) {
   ai.hp -= dmg;
-  addFloatingText(ai.x, ai.y - 25, `-${Math.round(dmg)}`, "#ffd43b");
+  if (isCrit) {
+    addFloatingText(fxX, fxY - 26, `💥 CHÍ MẠNG -${Math.round(dmg)}`, "#ff922b", 1.25);
+    spawnCritBurst(fxX, fxY);
+  } else {
+    addFloatingText(ai.x, ai.y - 25, `-${Math.round(dmg)}`, "#ffd43b", 1);
+  }
   if (ai.hp <= 0) {
     sessionStats.fishKilled += 1;
     sessionStats.coinsEarned += 5;
     gainExp(55 + ai.tier * 25);
-    if (myFish.healOnEat > 0) myFish.hp = Math.min(myFish.maxHp, myFish.hp + myFish.healOnEat);
-    // Rớt thêm mồi ngon
+    if (myFish.healOnKill > 0 && myFish.hp < myFish.maxHp) {
+      const healed = Math.min(myFish.healOnKill, myFish.maxHp - myFish.hp);
+      myFish.hp += healed;
+      addFloatingText(myFish.x, myFish.y - 25, `+${Math.round(healed)} HP`, "#51cf66", 1);
+    }
     for (let k = 0; k < 4; k++) {
       foods.push(spawnFood(ai.x + (Math.random() - 0.5) * 40, ai.y + (Math.random() - 0.5) * 40, 25));
     }
@@ -883,6 +984,7 @@ function gainExp(amount) {
 
 function openBuffChoice() {
   choosingBuff = true;
+  leftMouseDown = false;
   myFish.shieldTimer = Math.max(myFish.shieldTimer, 4.0);
   const shuffled = [...BUFF_POOL].sort(() => Math.random() - 0.5).slice(0, 3);
   const container = document.getElementById("buff-choices");
@@ -930,7 +1032,6 @@ function getFishRadius(tier, sizeMult = 1) {
 // ==================== VẼ THỦY CUNG & CÁ "VẠN CÂN" ====================
 function renderGame() {
   const w = canvas.width, h = canvas.height;
-  // Nền đại dương thủy cung
   const grad = ctx.createLinearGradient(0, 0, 0, h);
   grad.addColorStop(0, "#094c78");
   grad.addColorStop(0.6, "#042b48");
@@ -938,7 +1039,6 @@ function renderGame() {
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, w, h);
 
-  // Tia sáng xuyên nước
   ctx.save();
   ctx.globalAlpha = 0.06;
   ctx.fillStyle = "#8ce9ff";
@@ -957,12 +1057,10 @@ function renderGame() {
   ctx.save();
   ctx.translate(w / 2 - camera.x, h / 2 - camera.y);
 
-  // Ranh giới thủy cung
   ctx.strokeStyle = "rgba(77, 184, 255, 0.45)";
   ctx.lineWidth = 10;
   ctx.strokeRect(0, 0, MAP_SIZE, MAP_SIZE);
 
-  // San hô trang trí nền
   corals.forEach(c => {
     ctx.fillStyle = `hsla(${c.hue}, 55%, 30%, 0.22)`;
     ctx.beginPath();
@@ -970,7 +1068,6 @@ function renderGame() {
     ctx.fill();
   });
 
-  // Bong bóng nước
   ctx.fillStyle = "rgba(200, 240, 255, 0.25)";
   bubbles.forEach(b => {
     ctx.beginPath();
@@ -978,7 +1075,6 @@ function renderGame() {
     ctx.fill();
   });
 
-  // Mồi
   const t = performance.now() / 1000;
   foods.forEach(f => {
     const pulse = Math.sin(t * 4 + f.phase) * 1.5;
@@ -988,7 +1084,6 @@ function renderGame() {
     ctx.fill();
   });
 
-  // Đạn kỹ năng
   projectiles.forEach(pr => {
     ctx.fillStyle = pr.color;
     ctx.beginPath();
@@ -996,32 +1091,51 @@ function renderGame() {
     ctx.fill();
   });
 
-  // Tìm Top 1 để vẽ Vương miện
   const top1Uid = getTop1Uid();
 
-  // Vẽ AI Cá
   aiFishes.forEach(ai => {
     drawAnimatedFish(ai.x, ai.y, ai.angle, ai.species, ai.tier, 1, ai.name, ai.hp, ai.maxHp, false, false, false, t);
   });
 
-  // Vẽ Người chơi khác
   Object.values(remotePlayers).forEach(p => {
     drawAnimatedFish(p.x, p.y, p.angle, p.species, p.tier || 1, p.sizeMult || 1, p.name, p.hp, p.maxHp, p.uid === top1Uid, false, p.shield, t);
   });
 
-  // Vẽ Boss
   if (bossState && bossState.alive) {
     drawAnimatedFish(bossState.x, bossState.y, bossState.angle || 0, "boss", bossState.tier, 1.35, `BOSS THỦY CUNG (Cấp ${bossState.tier})`, bossState.hp, bossState.maxHp, false, true, false, t);
   }
 
-  // Vẽ Bản thân
   if (myFish) {
     drawAnimatedFish(myFish.x, myFish.y, myFish.angle, myFish.species, myFish.tier, myFish.sizeMult, myFish.name, myFish.hp, myFish.maxHp, myFish.uid === top1Uid, false, myFish.shieldTimer > 0, t);
   }
 
-  // Chữ sát thương / hồi máu
+  // Vẽ hiệu ứng táp cắn & tia nổ chí mạng
+  biteEffects.forEach(ef => {
+    const alpha = ef.life / ef.maxLife;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    if (ef.critSpark) {
+      ctx.strokeStyle = "#ff922b";
+      ctx.lineWidth = 4;
+      for (let k = 0; k < 8; k++) {
+        const a = (Math.PI * 2 * k) / 8;
+        ctx.beginPath();
+        ctx.moveTo(ef.x + Math.cos(a) * 8, ef.y + Math.sin(a) * 8);
+        ctx.lineTo(ef.x + Math.cos(a) * ef.radius * (1.2 - alpha * 0.4), ef.y + Math.sin(a) * ef.radius * (1.2 - alpha * 0.4));
+        ctx.stroke();
+      }
+    } else {
+      ctx.strokeStyle = "#e0f2fe";
+      ctx.lineWidth = Math.max(3, ef.radius * 0.12);
+      ctx.beginPath();
+      ctx.arc(ef.x, ef.y, ef.radius * 0.78, ef.angle - 0.9, ef.angle + 0.9);
+      ctx.stroke();
+    }
+    ctx.restore();
+  });
+
   floatingTexts.forEach(ft => {
-    ctx.font = "bold 16px Segoe UI";
+    ctx.font = `bold ${Math.round(16 * (ft.scale || 1))}px Segoe UI`;
     ctx.fillStyle = ft.color;
     ctx.textAlign = "center";
     ctx.fillText(ft.text, ft.x, ft.y);
@@ -1039,7 +1153,6 @@ function drawAnimatedFish(x, y, angle, species, tier, sizeMult, name, hp, maxHp,
   ctx.save();
   ctx.translate(x, y);
 
-  // Hào quang bá khí theo cấp độ (càng cấp cao càng rực)
   if (tier >= 3 || isBoss) {
     const auraAlpha = isBoss ? 0.38 : 0.14 + (tier - 2) * 0.08;
     const auraColor = isBoss ? "#ff2a2a" : cfg.accent;
@@ -1052,7 +1165,6 @@ function drawAnimatedFish(x, y, angle, species, tier, sizeMult, name, hp, maxHp,
     ctx.restore();
   }
 
-  // Khiên bảo vệ
   if (hasShield) {
     ctx.strokeStyle = "#51cf66";
     ctx.lineWidth = 4;
@@ -1061,12 +1173,11 @@ function drawAnimatedFish(x, y, angle, species, tier, sizeMult, name, hp, maxHp,
     ctx.stroke();
   }
 
-  // Xoay thân cá & Hoạt ảnh vẫy đuôi bơi
   ctx.save();
   ctx.rotate(angle);
-  const swimWag = Math.sin(t * (8 + tier * 0.8)) * (0.28);
+  const swimWag = Math.sin(t * (8 + tier * 0.8)) * 0.28;
 
-  // Đuôi cá uốn lượn
+  // Đuôi cá
   ctx.save();
   ctx.translate(-r * 0.85, 0);
   ctx.rotate(swimWag);
@@ -1080,7 +1191,7 @@ function drawAnimatedFish(x, y, angle, species, tier, sizeMult, name, hp, maxHp,
   ctx.fill();
   ctx.restore();
 
-  // Vây ngực hai bên (bơi vẫy)
+  // Vây ngực
   const finWag = Math.sin(t * 9) * 0.25;
   ctx.fillStyle = cfg.accent;
   [-1, 1].forEach(side => {
@@ -1093,7 +1204,7 @@ function drawAnimatedFish(x, y, angle, species, tier, sizeMult, name, hp, maxHp,
     ctx.restore();
   });
 
-  // Thân cá (đặc trưng theo loài)
+  // Thân cá
   ctx.fillStyle = cfg.color;
   ctx.beginPath();
   if (species === "turtle") {
@@ -1108,7 +1219,6 @@ function drawAnimatedFish(x, y, angle, species, tier, sizeMult, name, hp, maxHp,
   ctx.strokeStyle = cfg.accent;
   ctx.stroke();
 
-  // Mũi kiếm / Sừng bá khí (Kiểu cá vạn cân)
   if (species === "swordfish") {
     ctx.fillStyle = "#e0f2fe";
     ctx.beginPath();
@@ -1119,7 +1229,6 @@ function drawAnimatedFish(x, y, angle, species, tier, sizeMult, name, hp, maxHp,
     ctx.fill();
   }
   if (tier >= 3 || isBoss || species === "kingfish") {
-    // Gai giáp & sừng rồng trên lưng
     ctx.fillStyle = "#ffd43b";
     for (let s = -2; s <= 1; s++) {
       ctx.beginPath();
@@ -1130,7 +1239,6 @@ function drawAnimatedFish(x, y, angle, species, tier, sizeMult, name, hp, maxHp,
     }
   }
 
-  // Mắt cá sắc bén
   ctx.fillStyle = "#fff";
   ctx.beginPath();
   ctx.arc(r * 0.55, -r * 0.24, r * 0.18, 0, Math.PI * 2);
@@ -1141,7 +1249,6 @@ function drawAnimatedFish(x, y, angle, species, tier, sizeMult, name, hp, maxHp,
   ctx.fill();
   ctx.restore();
 
-  // ===== THANH MÁU & TÊN PHÍA TRÊN ĐẦU =====
   const barW = Math.max(54, r * 1.5);
   const barY = -r - 22;
 
@@ -1173,7 +1280,6 @@ function renderMinimap() {
   const scale = mw / MAP_SIZE;
   const top1Uid = getTop1Uid();
 
-  // Người chơi khác (màu vàng, Top 1 vương miện)
   Object.values(remotePlayers).forEach(p => {
     const mx = p.x * scale, my = p.y * scale;
     if (p.uid === top1Uid) {
@@ -1188,7 +1294,6 @@ function renderMinimap() {
     }
   });
 
-  // Boss (chấm màu đỏ)
   if (bossState && bossState.alive) {
     miniCtx.fillStyle = "#ff3b3b";
     miniCtx.beginPath();
@@ -1196,7 +1301,6 @@ function renderMinimap() {
     miniCtx.fill();
   }
 
-  // Bản thân
   if (myFish) {
     const mx = myFish.x * scale, my = myFish.y * scale;
     if (myFish.uid === top1Uid) {
@@ -1225,7 +1329,6 @@ function updateHUD() {
   document.getElementById("hud-exp-fill").style.width = expPct + "%";
   document.getElementById("hud-exp-text").textContent = `EXP: ${Math.floor(myFish.exp)} / ${myFish.expNeed}`;
 
-  // Skill cooldown
   const cfg = FISH_TYPES[myFish.species];
   document.getElementById("hud-skill-name").textContent = cfg.skillName;
   const cdOv = document.getElementById("hud-skill-cd");
@@ -1236,14 +1339,12 @@ function updateHUD() {
     cdOv.style.opacity = "0";
   }
 
-  // Buff đã nhận kèm số lần
   const buffBar = document.getElementById("active-buffs-bar");
   buffBar.innerHTML = Object.entries(myFish.buffCounts).map(([bid, cnt]) => {
     const b = BUFF_POOL.find(x => x.id === bid);
     return `<div class="buff-badge">${b.icon} <span class="cnt">x${cnt}</span></div>`;
   }).join("");
 
-  // Bảng xếp hạng trong trận
   const all = [myFish, ...Object.values(remotePlayers)].filter(Boolean);
   all.sort((a, b) => (b.score || 0) - (a.score || 0));
   document.getElementById("ingame-leaderboard").innerHTML = all.slice(0, 6).map((p, i) => `
@@ -1253,7 +1354,6 @@ function updateHUD() {
     </div>
   `).join("");
 
-  // Trạng thái Boss
   const banner = document.getElementById("boss-timer-banner");
   if (!bossState) {
     banner.textContent = "Boss: Đang khởi tạo...";
@@ -1288,6 +1388,7 @@ function handleDeath(reason) {
 async function finishMatch(isDead, reason) {
   if (!inGame) return;
   inGame = false;
+  leftMouseDown = false;
   cancelAnimationFrame(animFrameId);
   disconnectRealtimeRoom();
 
@@ -1295,7 +1396,6 @@ async function finishMatch(isDead, reason) {
   const bonusCoins = Math.floor(score / 40);
   const totalCoins = sessionStats.coinsEarned + bonusCoins;
 
-  // Cập nhật Coin, Best Score & Tiến trình nhiệm vụ
   userData.coins += totalCoins;
   userData.bestScore = Math.max(userData.bestScore || 0, score);
   userData.quests.foodEaten = (userData.quests.foodEaten || 0) + sessionStats.foodEaten;
@@ -1322,8 +1422,8 @@ async function finishMatch(isDead, reason) {
 }
 
 // ==================== TIỆN ÍCH ====================
-function addFloatingText(x, y, text, color) {
-  floatingTexts.push({ x, y, text, color, life: 1.0 });
+function addFloatingText(x, y, text, color, scale = 1) {
+  floatingTexts.push({ x, y, text, color, scale, life: 1.0 });
 }
 
 function addToast(msg) {
