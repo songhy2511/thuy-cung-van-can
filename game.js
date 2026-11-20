@@ -312,6 +312,24 @@ const ctx = canvas.getContext("2d");
 const miniCanvas = document.getElementById("minimap-canvas");
 const miniCtx = miniCanvas.getContext("2d");
 
+// Tải hình ảnh thức ăn từ Data/Images/thuc-an
+const foodImg = new Image();
+let foodImgReady = false;
+const foodPaths = [
+  "./Data/Images/thuc-an.png",
+  "./Data/Images/thuc-an.webp",
+  "./Data/Images/thuc-an.jpg"
+];
+let foodPathIdx = 0;
+foodImg.onload = () => { foodImgReady = true; };
+foodImg.onerror = () => {
+  foodPathIdx += 1;
+  if (foodPathIdx < foodPaths.length) {
+    foodImg.src = foodPaths[foodPathIdx];
+  }
+};
+foodImg.src = foodPaths[0];
+
 let dpr = Math.min(window.devicePixelRatio || 1, 2.5);
 let logicalW = window.innerWidth;
 let logicalH = window.innerHeight;
@@ -1247,17 +1265,30 @@ function renderGame() {
   });
 
   // Mồi thủy cung (hạt ngọc phát sáng)
+ // Mồi thủy cung bằng hình ảnh Data/Images/thuc-an
   const t = performance.now() / 1000;
   foods.forEach(f => {
-    const pulse = Math.sin(t * 4 + f.phase) * 1.4;
-    ctx.fillStyle = f.color;
-    ctx.beginPath();
-    ctx.arc(f.x, f.y, f.r + pulse, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = "rgba(255,255,255,0.65)";
-    ctx.beginPath();
-    ctx.arc(f.x - (f.r * 0.3), f.y - (f.r * 0.3), f.r * 0.32, 0, Math.PI * 2);
-    ctx.fill();
+    const pulse = Math.sin(t * 3.5 + f.phase) * 1.5;
+    const bobY = Math.sin(t * 2.5 + f.phase) * 3;
+    if (foodImgReady) {
+      const size = (f.r * 5.2) + pulse * 2;
+      if (f.val > 20) {
+        // Mồi lớn rớt từ cá bị hạ có quầng sáng vàng nổi bật
+        ctx.save();
+        ctx.globalAlpha = 0.38 + Math.sin(t * 5 + f.phase) * 0.12;
+        ctx.fillStyle = "#ffd43b";
+        ctx.beginPath();
+        ctx.arc(f.x, f.y + bobY, size * 0.38, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+      ctx.drawImage(foodImg, f.x - size / 2, f.y + bobY - size / 2, size, size);
+    } else {
+      ctx.fillStyle = f.color;
+      ctx.beginPath();
+      ctx.arc(f.x, f.y, f.r + pulse, 0, Math.PI * 2);
+      ctx.fill();
+    }
   });
 
   projectiles.forEach(pr => {
