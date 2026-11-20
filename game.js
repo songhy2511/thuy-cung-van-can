@@ -19,8 +19,11 @@ const FISH_TYPES = {
     id: "swordfish",
     name: "Cá Kiếm",
     icon: "🗡️",
-    color: "#38bdf8",
-    accent: "#bae6fd",
+    color: "#1d6fa5",
+    midColor: "#38bdf8",
+    bellyColor: "#e2f1ff",
+    accent: "#7dd3fc",
+    finGlow: "#bae6fd",
     cost: 0,
     dmgMult: 1.20,
     speedMult: 1.0,
@@ -35,8 +38,11 @@ const FISH_TYPES = {
     id: "turtle",
     name: "Rùa Biển",
     icon: "🐢",
-    color: "#40c057",
+    color: "#2b8a3e",
+    midColor: "#51cf66",
+    bellyColor: "#d8f5a2",
     accent: "#a9e34b",
+    finGlow: "#94d82d",
     cost: 0,
     dmgMult: 1.0,
     speedMult: 0.95,
@@ -51,8 +57,11 @@ const FISH_TYPES = {
     id: "butterfish",
     name: "Cá Chim",
     icon: "🪽",
-    color: "#f783ac",
+    color: "#be4bdb",
+    midColor: "#f783ac",
+    bellyColor: "#fff0f6",
     accent: "#fcc2d7",
+    finGlow: "#eebefa",
     cost: 0,
     dmgMult: 1.0,
     speedMult: 1.20,
@@ -67,8 +76,11 @@ const FISH_TYPES = {
     id: "kingfish",
     name: "Cá Của Vua",
     icon: "👑",
-    color: "#f59f00",
+    color: "#c92a2a",
+    midColor: "#f59f00",
+    bellyColor: "#fff3bf",
     accent: "#ffe066",
+    finGlow: "#ffd43b",
     cost: 100,
     dmgMult: 1.15,
     speedMult: 1.15,
@@ -294,11 +306,16 @@ async function loadLobbyLeaderboard() {
   `).join("");
 }
 
-// ==================== GAME ENGINE (CANVAS + MULTIPLAYER) ====================
+// ==================== GAME ENGINE (HIGH-DPI + MULTIPLAYER) ====================
 const canvas = document.getElementById("game-canvas");
 const ctx = canvas.getContext("2d");
 const miniCanvas = document.getElementById("minimap-canvas");
 const miniCtx = miniCanvas.getContext("2d");
+
+let dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+let logicalW = window.innerWidth;
+let logicalH = window.innerHeight;
+let miniLogicalSize = 150;
 
 let inGame = false;
 let animFrameId = null;
@@ -332,9 +349,19 @@ const corals = Array.from({ length: 45 }, () => ({
   hue: 160 + Math.random() * 180
 }));
 
+// Khắc phục hoàn toàn lỗi mờ trên điện thoại (High-DPI Scaling)
 function resizeCanvas() {
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
+  dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+  logicalW = window.innerWidth;
+  logicalH = window.innerHeight;
+
+  canvas.width = Math.floor(logicalW * dpr);
+  canvas.height = Math.floor(logicalH * dpr);
+
+  const rect = miniCanvas.getBoundingClientRect();
+  miniLogicalSize = rect.width > 10 ? rect.width : (logicalW <= 768 ? 96 : 150);
+  miniCanvas.width = Math.floor(miniLogicalSize * dpr);
+  miniCanvas.height = Math.floor(miniLogicalSize * dpr);
 }
 window.addEventListener("resize", resizeCanvas);
 resizeCanvas();
@@ -391,6 +418,7 @@ async function startMatch() {
     dashTimer: 0,
     reflectTimer: 0,
     biteCooldown: 0,
+    chompTimer: 0,
     buffCounts: {},
     joinedAt: Date.now()
   };
@@ -418,6 +446,7 @@ async function startMatch() {
   document.getElementById("buff-modal").classList.add("hidden");
 
   showScreen("game");
+  resizeCanvas(); // Cập nhật độ phân giải Retina ngay khi vào màn game
   refreshMobileControlsVisibility();
   inGame = true;
 
@@ -444,7 +473,7 @@ function spawnAiFish(idx) {
   const maxHp = 80 + tier * 70;
   return {
     id: "ai_" + idx + "_" + Math.random().toString(36).slice(2, 6),
-    name: ["Cá Hổ", "Cá Đuối", "Kình Ngư", "Hải Cẩu", "Cá Mập Nhỏ"][idx % 5],
+    name: ["Cá Hổ", "Cá Đuối", "Kình Ngư", "Hải Ngư", "Cá Mập Nhỏ"][idx % 5],
     species: sp,
     tier,
     x: Math.random() * MAP_SIZE,
@@ -514,6 +543,7 @@ function connectRealtimeRoom() {
       maxHp: Math.round(myFish.maxHp),
       sizeMult: myFish.sizeMult,
       shield: myFish.shieldTimer > 0,
+      chomping: myFish.chompTimer > 0,
       joinedAt: myFish.joinedAt,
       updatedAt: Date.now()
     });
@@ -672,7 +702,6 @@ window.addEventListener("keydown", (e) => {
   }
 });
 
-// Tự bật UI cảm ứng khi người dùng chạm vào màn hình
 window.addEventListener("touchstart", () => {
   isTouchDevice = true;
   inputMode = "touch";
@@ -794,6 +823,7 @@ function performBite() {
   if (!inGame || !myFish || choosingBuff || myFish.biteCooldown > 0) return;
 
   myFish.biteCooldown = 0.38;
+  myFish.chompTimer = 0.22; // Kích hoạt hoạt ảnh há miệng táp
   const myRadius = getFishRadius(myFish.tier, myFish.sizeMult);
 
   const biteDist = myRadius * 0.95;
@@ -942,12 +972,12 @@ function updateGame(dt) {
   if (myFish.dashTimer > 0) myFish.dashTimer = Math.max(0, myFish.dashTimer - dt);
   if (myFish.reflectTimer > 0) myFish.reflectTimer = Math.max(0, myFish.reflectTimer - dt);
   if (myFish.biteCooldown > 0) myFish.biteCooldown = Math.max(0, myFish.biteCooldown - dt);
+  if (myFish.chompTimer > 0) myFish.chompTimer = Math.max(0, myFish.chompTimer - dt);
 
   if (biteHold && myFish.biteCooldown <= 0) {
     performBite();
   }
 
-  // Di chuyển bằng Joystick (Mobile) hoặc Chuột (PC)
   let moveFactor = 0;
   if (inputMode === "touch") {
     if (joystick.active) {
@@ -957,8 +987,8 @@ function updateGame(dt) {
       moveFactor = 1;
     }
   } else {
-    const dx = mousePos.x - canvas.width / 2;
-    const dy = mousePos.y - canvas.height / 2;
+    const dx = mousePos.x - logicalW / 2;
+    const dy = mousePos.y - logicalH / 2;
     const distToCursor = Math.hypot(dx, dy);
     myFish.angle = Math.atan2(dy, dx);
     moveFactor = Math.min(1, distToCursor / 60);
@@ -973,7 +1003,6 @@ function updateGame(dt) {
 
   const myRadius = getFishRadius(myFish.tier, myFish.sizeMult);
 
-  // Ăn mồi & Hồi máu
   const eatRadius = (myRadius + 24) * myFish.eatRangeBonus;
   for (let i = foods.length - 1; i >= 0; i--) {
     const f = foods[i];
@@ -1159,22 +1188,25 @@ function getFishRadius(tier, sizeMult = 1) {
   return EVO_TIERS[t - 1].baseRadius * sizeMult;
 }
 
-// ==================== VẼ THỦY CUNG & CÁ "VẠN CÂN" ====================
+// ==================== VẼ THỦY CUNG & MODEL CÁ "CÂU CÁ VẠN CÂN" ====================
 function renderGame() {
-  const w = canvas.width, h = canvas.height;
-  // Tự điều chỉnh độ thu phóng để điện thoại màn nhỏ vẫn có tầm nhìn rộng
+  const w = logicalW, h = logicalH;
+  // Đặt hệ quy chiếu High-DPI để hình ảnh trên điện thoại sắc nét tuyệt đối
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
   const viewScale = Math.min(1.0, Math.max(0.56, Math.min(w, h) / 760));
 
   const grad = ctx.createLinearGradient(0, 0, 0, h);
-  grad.addColorStop(0, "#094c78");
-  grad.addColorStop(0.6, "#042b48");
-  grad.addColorStop(1, "#021627");
+  grad.addColorStop(0, "#0b5b8c");
+  grad.addColorStop(0.55, "#053356");
+  grad.addColorStop(1, "#02182b");
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, w, h);
 
+  // Tia sáng rọi xuống đáy thủy cung
   ctx.save();
-  ctx.globalAlpha = 0.06;
-  ctx.fillStyle = "#8ce9ff";
+  ctx.globalAlpha = 0.08;
+  ctx.fillStyle = "#a5f3fc";
   for (let i = 0; i < 6; i++) {
     const rx = ((i * 340 - camera.x * 0.2) % (w + 400)) - 100;
     ctx.beginPath();
@@ -1192,30 +1224,39 @@ function renderGame() {
   ctx.scale(viewScale, viewScale);
   ctx.translate(-camera.x, -camera.y);
 
-  ctx.strokeStyle = "rgba(77, 184, 255, 0.45)";
+  // Ranh giới thủy cung
+  ctx.strokeStyle = "rgba(77, 184, 255, 0.5)";
   ctx.lineWidth = 10;
   ctx.strokeRect(0, 0, MAP_SIZE, MAP_SIZE);
 
+  // San hô nền
   corals.forEach(c => {
-    ctx.fillStyle = `hsla(${c.hue}, 55%, 30%, 0.22)`;
+    ctx.fillStyle = `hsla(${c.hue}, 55%, 32%, 0.22)`;
     ctx.beginPath();
     ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
     ctx.fill();
   });
 
-  ctx.fillStyle = "rgba(200, 240, 255, 0.25)";
+  // Bong bóng nước
   bubbles.forEach(b => {
+    ctx.strokeStyle = "rgba(200, 244, 255, 0.35)";
+    ctx.lineWidth = 1.2;
     ctx.beginPath();
     ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.stroke();
   });
 
+  // Mồi thủy cung (hạt ngọc phát sáng)
   const t = performance.now() / 1000;
   foods.forEach(f => {
-    const pulse = Math.sin(t * 4 + f.phase) * 1.5;
+    const pulse = Math.sin(t * 4 + f.phase) * 1.4;
     ctx.fillStyle = f.color;
     ctx.beginPath();
     ctx.arc(f.x, f.y, f.r + pulse, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,0.65)";
+    ctx.beginPath();
+    ctx.arc(f.x - (f.r * 0.3), f.y - (f.r * 0.3), f.r * 0.32, 0, Math.PI * 2);
     ctx.fill();
   });
 
@@ -1229,19 +1270,20 @@ function renderGame() {
   const top1Uid = getTop1Uid();
 
   aiFishes.forEach(ai => {
-    drawAnimatedFish(ai.x, ai.y, ai.angle, ai.species, ai.tier, 1, ai.name, ai.hp, ai.maxHp, false, false, false, t);
+    drawDetailedFish(ai.x, ai.y, ai.angle, ai.species, ai.tier, 1, ai.name, ai.hp, ai.maxHp, false, false, false, 0, t);
   });
 
   Object.values(remotePlayers).forEach(p => {
-    drawAnimatedFish(p.x, p.y, p.angle, p.species, p.tier || 1, p.sizeMult || 1, p.name, p.hp, p.maxHp, p.uid === top1Uid, false, p.shield, t);
+    drawDetailedFish(p.x, p.y, p.angle, p.species, p.tier || 1, p.sizeMult || 1, p.name, p.hp, p.maxHp, p.uid === top1Uid, false, p.shield, p.chomping ? 0.8 : 0, t);
   });
 
   if (bossState && bossState.alive) {
-    drawAnimatedFish(bossState.x, bossState.y, bossState.angle || 0, "boss", bossState.tier, 1.35, `BOSS THỦY CUNG (Cấp ${bossState.tier})`, bossState.hp, bossState.maxHp, false, true, false, t);
+    drawDetailedFish(bossState.x, bossState.y, bossState.angle || 0, "boss", bossState.tier, 1.35, `BOSS THỦY CUNG (Cấp ${bossState.tier})`, bossState.hp, bossState.maxHp, false, true, false, 0.35, t);
   }
 
   if (myFish) {
-    drawAnimatedFish(myFish.x, myFish.y, myFish.angle, myFish.species, myFish.tier, myFish.sizeMult, myFish.name, myFish.hp, myFish.maxHp, myFish.uid === top1Uid, false, myFish.shieldTimer > 0, t);
+    const chomp = myFish.chompTimer > 0 ? myFish.chompTimer / 0.22 : 0;
+    drawDetailedFish(myFish.x, myFish.y, myFish.angle, myFish.species, myFish.tier, myFish.sizeMult, myFish.name, myFish.hp, myFish.maxHp, myFish.uid === top1Uid, false, myFish.shieldTimer > 0, chomp, t);
   }
 
   biteEffects.forEach(ef => {
@@ -1272,136 +1314,383 @@ function renderGame() {
     ctx.font = `bold ${Math.round(16 * (ft.scale || 1))}px Segoe UI`;
     ctx.fillStyle = ft.color;
     ctx.textAlign = "center";
+    ctx.strokeStyle = "rgba(0,0,0,0.65)";
+    ctx.lineWidth = 3;
+    ctx.strokeText(ft.text, ft.x, ft.y);
     ctx.fillText(ft.text, ft.x, ft.y);
   });
 
   ctx.restore();
 }
 
-function drawAnimatedFish(x, y, angle, species, tier, sizeMult, name, hp, maxHp, isTop1, isBoss, hasShield, t) {
+// Hàm vẽ vây năng lượng pha lê trong suốt (giống hình thủy quái Câu Cá Vạn Cân)
+function drawEnergyBladeFin(x, y, len, width, angleOffset, baseColor, glowColor, wag) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angleOffset + wag);
+  const grad = ctx.createLinearGradient(0, 0, -len, 0);
+  grad.addColorStop(0, baseColor);
+  grad.addColorStop(0.55, glowColor);
+  grad.addColorStop(1, "rgba(255, 255, 255, 0.9)");
+
+  ctx.fillStyle = grad;
+  ctx.globalAlpha = 0.85;
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.quadraticCurveTo(-len * 0.45, -width * 1.15, -len, -width * 0.25);
+  ctx.quadraticCurveTo(-len * 0.55, width * 0.35, 0, width * 0.25);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.75)";
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawDetailedFish(x, y, angle, species, tier, sizeMult, name, hp, maxHp, isTop1, isBoss, hasShield, chompRatio, t) {
   const r = getFishRadius(tier, sizeMult);
   const cfg = isBoss
-    ? { color: "#b91c1c", accent: "#fbbf24" }
+    ? {
+        color: "#0f172a",
+        midColor: "#1e3a5f",
+        bellyColor: "#cbd5e1",
+        accent: "#38bdf8",
+        finGlow: "#a5f3fc"
+      }
     : (FISH_TYPES[species] || FISH_TYPES.swordfish);
 
   ctx.save();
   ctx.translate(x, y);
 
+  // Hào quang bá khí cho bậc 3+ và Boss
   if (tier >= 3 || isBoss) {
-    const auraAlpha = isBoss ? 0.38 : 0.14 + (tier - 2) * 0.08;
-    const auraColor = isBoss ? "#ff2a2a" : cfg.accent;
+    const auraAlpha = isBoss ? 0.34 : 0.12 + (tier - 2) * 0.06;
+    const auraGrad = ctx.createRadialGradient(0, 0, r * 0.4, 0, 0, r * 1.55);
+    auraGrad.addColorStop(0, isBoss ? "rgba(56, 189, 248, 0.45)" : "rgba(186, 230, 253, 0.35)");
+    auraGrad.addColorStop(1, "rgba(0, 0, 0, 0)");
     ctx.save();
-    ctx.globalAlpha = auraAlpha + Math.sin(t * 5) * 0.06;
-    ctx.fillStyle = auraColor;
+    ctx.globalAlpha = auraAlpha + Math.sin(t * 4) * 0.05;
+    ctx.fillStyle = auraGrad;
     ctx.beginPath();
-    ctx.arc(0, 0, r * 1.45, 0, Math.PI * 2);
+    ctx.arc(0, 0, r * 1.55, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
   }
 
+  // Khiên bảo vệ
   if (hasShield) {
     ctx.strokeStyle = "#51cf66";
-    ctx.lineWidth = 4;
+    ctx.lineWidth = 3.5;
     ctx.beginPath();
-    ctx.arc(0, 0, r * 1.32, 0, Math.PI * 2);
+    ctx.arc(0, 0, r * 1.38, 0, Math.PI * 2);
     ctx.stroke();
   }
 
+  // Xoay theo hướng bơi, lật Y khi quay sang trái để cá luôn đúng chiều lưng-bụng
   ctx.save();
   ctx.rotate(angle);
-  const swimWag = Math.sin(t * (8 + tier * 0.8)) * 0.28;
-
-  // Đuôi cá
-  ctx.save();
-  ctx.translate(-r * 0.85, 0);
-  ctx.rotate(swimWag);
-  ctx.fillStyle = cfg.accent;
-  ctx.beginPath();
-  ctx.moveTo(0, 0);
-  ctx.lineTo(-r * 0.75, -r * 0.55);
-  ctx.lineTo(-r * 0.45, 0);
-  ctx.lineTo(-r * 0.75, r * 0.55);
-  ctx.closePath();
-  ctx.fill();
-  ctx.restore();
-
-  // Vây ngực
-  const finWag = Math.sin(t * 9) * 0.25;
-  ctx.fillStyle = cfg.accent;
-  [-1, 1].forEach(side => {
-    ctx.save();
-    ctx.translate(r * 0.1, side * r * 0.52);
-    ctx.rotate(side * (0.4 + finWag));
-    ctx.beginPath();
-    ctx.ellipse(0, side * r * 0.2, r * 0.35, r * 0.16, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-  });
-
-  // Thân cá
-  ctx.fillStyle = cfg.color;
-  ctx.beginPath();
-  if (species === "turtle") {
-    ctx.ellipse(0, 0, r * 1.05, r * 0.88, 0, 0, Math.PI * 2);
-  } else if (species === "butterfish") {
-    ctx.ellipse(0, 0, r * 0.95, r * 0.78, 0, 0, Math.PI * 2);
-  } else {
-    ctx.ellipse(0, 0, r * 1.2, r * 0.65, 0, 0, Math.PI * 2);
+  if (Math.cos(angle) < 0) {
+    ctx.scale(1, -1);
   }
-  ctx.fill();
-  ctx.lineWidth = 2.5;
-  ctx.strokeStyle = cfg.accent;
-  ctx.stroke();
 
-  if (species === "swordfish") {
-    ctx.fillStyle = "#e0f2fe";
+  const swimWag = Math.sin(t * (7.5 + tier * 0.7)) * 0.22;
+  const finWag = Math.sin(t * 8.5) * 0.16;
+
+  if (species === "turtle") {
+    // ===== MODEL RÙA CHIẾN GIÁP =====
+    // 4 chân chèo trước sau
+    ctx.fillStyle = cfg.color;
+    ctx.strokeStyle = "#14532d";
+    ctx.lineWidth = 1.8;
+
+    // Chân sau
+    ctx.save();
+    ctx.translate(-r * 0.55, r * 0.45);
+    ctx.rotate(0.5 - finWag);
     ctx.beginPath();
-    ctx.moveTo(r * 1.15, -r * 0.12);
-    ctx.lineTo(r * 1.95, 0);
-    ctx.lineTo(r * 1.15, r * 0.12);
+    ctx.ellipse(0, 0, r * 0.34, r * 0.15, 0, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+    ctx.restore();
+
+    // Chân trước lớn
+    ctx.save();
+    ctx.translate(r * 0.35, r * 0.52);
+    ctx.rotate(-0.45 + finWag * 1.4);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, r * 0.46, r * 0.18, 0, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+    ctx.restore();
+
+    // Đầu rùa có mỏ & hàm cắn
+    ctx.save();
+    ctx.translate(r * 0.85, 0);
+    ctx.fillStyle = cfg.midColor;
+    ctx.beginPath();
+    ctx.ellipse(0, -r * 0.05, r * 0.38, r * 0.25, 0, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+
+    // Hàm dưới mở khi cắn
+    ctx.save();
+    ctx.rotate(0.1 + chompRatio * 0.45);
+    ctx.fillStyle = cfg.bellyColor;
+    ctx.beginPath();
+    ctx.moveTo(0, r * 0.05);
+    ctx.lineTo(r * 0.32, r * 0.08);
+    ctx.lineTo(r * 0.05, r * 0.22);
     ctx.closePath();
     ctx.fill();
-  }
-  if (tier >= 3 || isBoss || species === "kingfish") {
-    ctx.fillStyle = "#ffd43b";
-    for (let s = -2; s <= 1; s++) {
+    ctx.restore();
+
+    // Mắt rùa sắc lạnh
+    ctx.fillStyle = "#fff";
+    ctx.beginPath(); ctx.arc(r * 0.12, -r * 0.1, r * 0.09, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#111";
+    ctx.beginPath(); ctx.arc(r * 0.15, -r * 0.1, r * 0.045, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+
+    // Mai rùa 3D phân mảng lục giác
+    const shellGrad = ctx.createRadialGradient(-r * 0.1, -r * 0.3, r * 0.1, 0, 0, r);
+    shellGrad.addColorStop(0, cfg.accent);
+    shellGrad.addColorStop(0.6, cfg.color);
+    shellGrad.addColorStop(1, "#14532d");
+    ctx.fillStyle = shellGrad;
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.95, r * 0.18);
+    ctx.bezierCurveTo(-r * 0.8, -r * 0.92, r * 0.75, -r * 0.88, r * 0.88, r * 0.18);
+    ctx.quadraticCurveTo(0, r * 0.35, -r * 0.95, r * 0.18);
+    ctx.closePath();
+    ctx.fill();
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = tier >= 3 ? "#ffd43b" : "#8ce99a";
+    ctx.stroke();
+
+    // Hoa văn mảng giáp trên mai
+    ctx.strokeStyle = "rgba(255,255,255,0.28)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.45, -r * 0.48); ctx.lineTo(r * 0.4, -r * 0.48);
+    ctx.moveTo(-r * 0.15, -r * 0.65); ctx.lineTo(-r * 0.25, r * 0.15);
+    ctx.moveTo(r * 0.2, -r * 0.62); ctx.lineTo(r * 0.25, r * 0.15);
+    ctx.stroke();
+
+    // Gai giáp khi tiến hóa bậc 3+
+    if (tier >= 3) {
+      drawEnergyBladeFin(-r * 0.2, -r * 0.62, r * 0.75, r * 0.28, -0.35, cfg.midColor, cfg.finGlow, finWag);
+    }
+  } else {
+    // ===== MODEL CÁ / THỦY QUÁI / BOSS (GIỐNG ẢNH CÂU CÁ VẠN CÂN) =====
+    const bodyLen = (isBoss || species === "swordfish") ? r * 1.25 : r * 1.08;
+    const bodyH = species === "butterfish" ? r * 0.78 : r * 0.56;
+
+    // 1. Vây đuôi lớn (uốn lượn theo nhịp bơi)
+    ctx.save();
+    ctx.translate(-bodyLen * 0.82, 0);
+    ctx.rotate(swimWag);
+    if (tier >= 3 || isBoss) {
+      drawEnergyBladeFin(0, -bodyH * 0.15, r * 1.15, r * 0.42, -0.35, cfg.midColor, cfg.finGlow, 0);
+      drawEnergyBladeFin(0, bodyH * 0.15, r * 0.95, r * 0.35, 0.35, cfg.midColor, cfg.finGlow, 0);
+    } else {
+      const tailGrad = ctx.createLinearGradient(0, 0, -r * 0.9, 0);
+      tailGrad.addColorStop(0, cfg.color);
+      tailGrad.addColorStop(1, cfg.accent);
+      ctx.fillStyle = tailGrad;
       ctx.beginPath();
-      ctx.moveTo(s * r * 0.3, -r * 0.48);
-      ctx.lineTo(s * r * 0.3 - r * 0.18, -r * 0.88);
-      ctx.lineTo(s * r * 0.3 + r * 0.18, -r * 0.48);
+      ctx.moveTo(0, 0);
+      ctx.quadraticCurveTo(-r * 0.5, -r * 0.65, -r * 0.92, -r * 0.68);
+      ctx.quadraticCurveTo(-r * 0.48, 0, -r * 0.92, r * 0.68);
+      ctx.quadraticCurveTo(-r * 0.5, r * 0.65, 0, 0);
       ctx.fill();
+      ctx.strokeStyle = cfg.bellyColor;
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // 2. Vây lưng (bậc cao biến thành dải vây pha lê dài thướt tha giống ảnh!)
+    if (tier >= 3 || isBoss) {
+      drawEnergyBladeFin(r * 0.15, -bodyH * 0.78, r * 1.55, r * 0.36, -0.25, cfg.midColor, cfg.finGlow, finWag * 0.5);
+      drawEnergyBladeFin(-r * 0.22, -bodyH * 0.68, r * 1.25, r * 0.28, -0.2, cfg.color, cfg.finGlow, -finWag * 0.4);
+    } else {
+      ctx.fillStyle = cfg.midColor;
+      ctx.beginPath();
+      ctx.moveTo(r * 0.18, -bodyH * 0.72);
+      ctx.quadraticCurveTo(-r * 0.25, -bodyH * 1.55, -r * 0.58, -bodyH * 0.55);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = cfg.accent;
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+    }
+
+    // 3. Thân cá thuôn dài kiểu cá đại dương / rồng biển
+    const bodyGrad = ctx.createLinearGradient(0, -bodyH, 0, bodyH);
+    bodyGrad.addColorStop(0, cfg.color);
+    bodyGrad.addColorStop(0.52, cfg.midColor);
+    bodyGrad.addColorStop(0.75, cfg.bellyColor);
+    bodyGrad.addColorStop(1, cfg.bellyColor);
+
+    ctx.fillStyle = bodyGrad;
+    ctx.beginPath();
+    ctx.moveTo(bodyLen * 0.95, -bodyH * 0.05); // Mũi
+    ctx.bezierCurveTo(bodyLen * 0.45, -bodyH * 1.05, -bodyLen * 0.45, -bodyH * 0.92, -bodyLen * 0.88, -bodyH * 0.14);
+    ctx.lineTo(-bodyLen * 0.88, bodyH * 0.16);
+    ctx.bezierCurveTo(-bodyLen * 0.45, bodyH * 0.92, bodyLen * 0.35, bodyH * 0.95, bodyLen * 0.86, bodyH * 0.15);
+    ctx.closePath();
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = isBoss ? "#38bdf8" : "rgba(255,255,255,0.45)";
+    ctx.stroke();
+
+    // Đường hông ánh kim (giống con cá trên cùng góc trái ảnh)
+    ctx.strokeStyle = cfg.accent;
+    ctx.lineWidth = Math.max(1.5, r * 0.06);
+    ctx.beginPath();
+    ctx.moveTo(bodyLen * 0.42, -bodyH * 0.05);
+    ctx.quadraticCurveTo(0, -bodyH * 0.18, -bodyLen * 0.78, 0);
+    ctx.stroke();
+
+    // Các đốt giáp bụng hoặc vảy cá
+    ctx.strokeStyle = isBoss ? "rgba(15, 23, 42, 0.45)" : "rgba(255, 255, 255, 0.22)";
+    ctx.lineWidth = 1.4;
+    for (let s = -2; s <= 2; s++) {
+      const sx = s * r * 0.24;
+      ctx.beginPath();
+      ctx.arc(sx, bodyH * 0.22, r * 0.22, -0.7, 0.9);
+      ctx.stroke();
+    }
+
+    // Mũi kiếm dài cho Cá Kiếm
+    if (species === "swordfish") {
+      const swordGrad = ctx.createLinearGradient(bodyLen * 0.75, 0, bodyLen * 1.65, 0);
+      swordGrad.addColorStop(0, cfg.color);
+      swordGrad.addColorStop(1, "#f0f9ff");
+      ctx.fillStyle = swordGrad;
+      ctx.beginPath();
+      ctx.moveTo(bodyLen * 0.78, -bodyH * 0.18);
+      ctx.lineTo(bodyLen * 1.68, -bodyH * 0.02);
+      ctx.lineTo(bodyLen * 0.78, bodyH * 0.14);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // Sừng chiến giáp trên đầu (Boss & Bậc 3+)
+    if (isBoss || tier >= 3 || species === "kingfish") {
+      ctx.fillStyle = isBoss ? "#1e293b" : "#ffd43b";
+      ctx.beginPath();
+      ctx.moveTo(bodyLen * 0.55, -bodyH * 0.42);
+      ctx.lineTo(bodyLen * 0.15, -bodyH * 1.25);
+      ctx.lineTo(bodyLen * 0.3, -bodyH * 0.55);
+      ctx.lineTo(-bodyLen * 0.05, -bodyH * 1.12);
+      ctx.lineTo(bodyLen * 0.1, -bodyH * 0.52);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = cfg.accent;
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+    }
+
+    // 4. Hàm dưới cử động & Răng sắc (há rộng khi bấm Chuột trái Cắn!)
+    const jawAngle = (isBoss || species === "kingfish" ? 0.18 : 0.06) + chompRatio * 0.52;
+    ctx.save();
+    ctx.translate(bodyLen * 0.55, bodyH * 0.16);
+    ctx.rotate(jawAngle);
+    // Khoang miệng tối
+    ctx.fillStyle = "#450a0a";
+    ctx.beginPath();
+    ctx.moveTo(0, -bodyH * 0.12);
+    ctx.lineTo(r * 0.45, 0);
+    ctx.lineTo(0, bodyH * 0.14);
+    ctx.closePath();
+    ctx.fill();
+    // Răng nhọn trắng
+    ctx.fillStyle = "#fff";
+    for (let tIdx = 0; tIdx < 3; tIdx++) {
+      const tx = r * (0.1 + tIdx * 0.11);
+      ctx.beginPath();
+      ctx.moveTo(tx, bodyH * 0.08);
+      ctx.lineTo(tx + 3, -bodyH * 0.06);
+      ctx.lineTo(tx + 6, bodyH * 0.08);
+      ctx.fill();
+    }
+    // Viền hàm dưới
+    ctx.fillStyle = cfg.bellyColor;
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.1, bodyH * 0.06);
+    ctx.lineTo(r * 0.46, bodyH * 0.04);
+    ctx.quadraticCurveTo(r * 0.15, bodyH * 0.28, -r * 0.12, bodyH * 0.22);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    // Đường mang cá (Gill)
+    ctx.strokeStyle = "rgba(15, 23, 42, 0.55)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(bodyLen * 0.28, 0, bodyH * 0.55, -0.75, 0.75);
+    ctx.stroke();
+
+    // Mắt cá sắc bén có ánh sáng
+    const eyeX = bodyLen * 0.52;
+    const eyeY = -bodyH * 0.22;
+    ctx.fillStyle = isBoss ? "#e0f2fe" : "#ffffff";
+    ctx.beginPath();
+    ctx.ellipse(eyeX, eyeY, r * 0.16, r * 0.13, -0.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = isBoss ? "#0284c7" : "#0f172a";
+    ctx.beginPath();
+    ctx.arc(eyeX + r * 0.04, eyeY, r * 0.075, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#fff";
+    ctx.beginPath();
+    ctx.arc(eyeX + r * 0.06, eyeY - r * 0.04, r * 0.03, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Vây ngực bên hông (bay phấp phới)
+    if (tier >= 3 || isBoss) {
+      drawEnergyBladeFin(bodyLen * 0.22, bodyH * 0.35, r * 1.25, r * 0.26, 0.28, cfg.midColor, cfg.finGlow, finWag);
+    } else {
+      ctx.save();
+      ctx.translate(bodyLen * 0.22, bodyH * 0.35);
+      ctx.rotate(0.3 + finWag);
+      ctx.fillStyle = cfg.accent;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.quadraticCurveTo(-r * 0.45, r * 0.35, -r * 0.65, r * 0.08);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
     }
   }
 
-  ctx.fillStyle = "#fff";
-  ctx.beginPath();
-  ctx.arc(r * 0.55, -r * 0.24, r * 0.18, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = isBoss ? "#ff0000" : "#111";
-  ctx.beginPath();
-  ctx.arc(r * 0.6, -r * 0.24, r * 0.09, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
+  ctx.restore(); // Kết thúc xoay cá
 
-  const barW = Math.max(54, r * 1.5);
-  const barY = -r - 22;
+  // ===== THANH MÁU & TÊN PHÍA TRÊN ĐẦU (LUÔN ĐỨNG THẲNG) =====
+  const barW = Math.max(56, r * 1.6);
+  const barY = -r - 24;
 
-  ctx.fillStyle = "rgba(0,0,0,0.65)";
+  ctx.fillStyle = "rgba(0,0,0,0.7)";
   ctx.fillRect(-barW / 2, barY, barW, 8);
   const hpRatio = Math.max(0, Math.min(1, (hp || 0) / (maxHp || 1)));
   ctx.fillStyle = isBoss ? "#ff3b3b" : "#51cf66";
   ctx.fillRect(-barW / 2, barY, barW * hpRatio, 8);
+  ctx.strokeStyle = "rgba(255,255,255,0.3)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(-barW / 2, barY, barW, 8);
 
   ctx.font = isBoss ? "bold 14px Segoe UI" : "bold 12px Segoe UI";
   ctx.textAlign = "center";
   ctx.fillStyle = isBoss ? "#ff8787" : "#ffffff";
   const prefix = isTop1 ? "👑 " : "";
+  ctx.strokeStyle = "rgba(0,0,0,0.8)";
+  ctx.lineWidth = 3;
+  ctx.strokeText(`${prefix}${name}`, 0, barY - 6);
   ctx.fillText(`${prefix}${name}`, 0, barY - 6);
 
   ctx.restore();
 }
 
-// ==================== MINIMAP & HUD ====================
+// ==================== MINIMAP & HUD (HIGH-DPI) ====================
 function getTop1Uid() {
   const all = [myFish, ...Object.values(remotePlayers)].filter(Boolean);
   all.sort((a, b) => (b.score || 0) - (a.score || 0));
@@ -1409,7 +1698,8 @@ function getTop1Uid() {
 }
 
 function renderMinimap() {
-  const mw = miniCanvas.width, mh = miniCanvas.height;
+  const mw = miniLogicalSize, mh = miniLogicalSize;
+  miniCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
   miniCtx.clearRect(0, 0, mw, mh);
   const scale = mw / MAP_SIZE;
   const top1Uid = getTop1Uid();
@@ -1417,13 +1707,13 @@ function renderMinimap() {
   Object.values(remotePlayers).forEach(p => {
     const mx = p.x * scale, my = p.y * scale;
     if (p.uid === top1Uid) {
-      miniCtx.font = "13px Segoe UI";
+      miniCtx.font = "12px Segoe UI";
       miniCtx.textAlign = "center";
       miniCtx.fillText("👑", mx, my + 4);
     } else {
       miniCtx.fillStyle = "#ffd43b";
       miniCtx.beginPath();
-      miniCtx.arc(mx, my, 3.5, 0, Math.PI * 2);
+      miniCtx.arc(mx, my, 3.2, 0, Math.PI * 2);
       miniCtx.fill();
     }
   });
@@ -1431,20 +1721,20 @@ function renderMinimap() {
   if (bossState && bossState.alive) {
     miniCtx.fillStyle = "#ff3b3b";
     miniCtx.beginPath();
-    miniCtx.arc(bossState.x * scale, bossState.y * scale, 5.5, 0, Math.PI * 2);
+    miniCtx.arc(bossState.x * scale, bossState.y * scale, 5, 0, Math.PI * 2);
     miniCtx.fill();
   }
 
   if (myFish) {
     const mx = myFish.x * scale, my = myFish.y * scale;
     if (myFish.uid === top1Uid) {
-      miniCtx.font = "13px Segoe UI";
+      miniCtx.font = "12px Segoe UI";
       miniCtx.textAlign = "center";
       miniCtx.fillText("👑", mx, my + 4);
     } else {
       miniCtx.fillStyle = "#51cf66";
       miniCtx.beginPath();
-      miniCtx.arc(mx, my, 4, 0, Math.PI * 2);
+      miniCtx.arc(mx, my, 3.8, 0, Math.PI * 2);
       miniCtx.fill();
     }
   }
