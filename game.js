@@ -854,8 +854,8 @@ function performBite() {
     y: biteY,
     angle: myFish.angle,
     radius: biteRadius,
-    life: 0.16,
-    maxLife: 0.16,
+    life: 0.24,
+    maxLife: 0.24,
     critSpark: false
   });
 
@@ -1332,11 +1332,78 @@ function renderGame() {
         ctx.stroke();
       }
     } else {
-      ctx.strokeStyle = "#e0f2fe";
-      ctx.lineWidth = Math.max(3, ef.radius * 0.12);
-      ctx.beginPath();
-      ctx.arc(ef.x, ef.y, ef.radius * 0.78, ef.angle - 0.9, ef.angle + 0.9);
-      ctx.stroke();
+      // Hiệu ứng Răng Ma Cà Rồng cắn sập vào nhau
+      const progress = 1 - alpha;
+      const snap = Math.min(1, progress * 1.65); // Táp khép lại thật nhanh rồi mờ dần
+      const R = ef.radius * 0.88;
+      const jawGap = R * 0.72 * (1 - snap * 0.86);
+
+      ctx.translate(ef.x, ef.y);
+      ctx.rotate(ef.angle);
+      if (Math.cos(ef.angle) < 0) ctx.scale(1, -1);
+
+      // Hàm vẽ 1 hàm răng (dir = 1: hàm trên chỉa xuống, dir = -1: hàm dưới chỉa lên)
+      const drawVampireJaw = (dir) => {
+        ctx.save();
+        ctx.translate(0, -dir * jawGap);
+
+        // Quầng đỏ huyết phía sau hàm
+        ctx.strokeStyle = "rgba(225, 29, 72, 0.85)";
+        ctx.lineWidth = Math.max(2.5, R * 0.11);
+        ctx.beginPath();
+        ctx.moveTo(-R * 0.62, -dir * R * 0.08);
+        ctx.quadraticCurveTo(0, -dir * R * 0.34, R * 0.62, -dir * R * 0.08);
+        ctx.stroke();
+
+        // 2 Răng nhỏ ở giữa
+        ctx.fillStyle = "#fff5f5";
+        ctx.strokeStyle = "#be123c";
+        ctx.lineWidth = 1.3;
+        [-0.14, 0.14].forEach(pos => {
+          ctx.beginPath();
+          ctx.moveTo(R * (pos - 0.08), -dir * R * 0.1);
+          ctx.lineTo(R * pos, dir * R * 0.24);
+          ctx.lineTo(R * (pos + 0.08), -dir * R * 0.1);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+        });
+
+        // 2 Răng Nanh Ma Cà Rồng dài cong sắc nhọn hai bên
+        [-1, 1].forEach(side => {
+          const bx = side * R * 0.4;
+          const fangGrad = ctx.createLinearGradient(bx, -dir * R * 0.12, bx, dir * R * 0.68);
+          fangGrad.addColorStop(0, "#ffffff");
+          fangGrad.addColorStop(0.75, "#ffe4e6");
+          fangGrad.addColorStop(1, "#fda4af");
+
+          ctx.fillStyle = fangGrad;
+          ctx.strokeStyle = "#9f1239";
+          ctx.lineWidth = 1.6;
+          ctx.beginPath();
+          ctx.moveTo(bx - side * R * 0.15, -dir * R * 0.14);
+          ctx.quadraticCurveTo(bx + side * R * 0.04, dir * R * 0.28, bx - side * R * 0.05, dir * R * 0.66);
+          ctx.quadraticCurveTo(bx - side * R * 0.08, dir * R * 0.25, bx + side * R * 0.12, -dir * R * 0.12);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+        });
+
+        ctx.restore();
+      };
+
+      drawVampireJaw(1);  // Hàm trên
+      drawVampireJaw(-1); // Hàm dưới
+
+      // Tia lóe đỏ trắng ngay khoảnh khắc 2 cặp nanh sập vào nhau
+      if (snap > 0.7) {
+        ctx.strokeStyle = "#fff1f2";
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(-R * 0.75, 0);
+        ctx.lineTo(R * 0.75, 0);
+        ctx.stroke();
+      }
     }
     ctx.restore();
   });
