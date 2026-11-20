@@ -264,7 +264,7 @@ export function hostUpdateWorld(bossesState, eventState, allPlayers, highestTier
       }
 
       // 3. Skill "Sức mạnh tuyệt đối": Sau 30s kể từ khi bị đánh (còn người chơi trong tầm nhìn)
-      if (!isAbs && (b.combatStartedAt || 0) > 0 && now - b.combatStartedAt >= 30000 && now >= (b.absCdUntil || 0)) {
+      if (!isAbs && (b.combatStartedAt || 0) > 0 && now - b.combatStartedAt >= 10000 && now >= (b.absCdUntil || 0)) {
         patch.absUntil = now + 10000;
         patch.absCdUntil = now + 45000;
         patch.combatStartedAt = now + 10000; // Chu kỳ mới sau khi kết thúc
