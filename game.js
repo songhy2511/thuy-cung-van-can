@@ -685,7 +685,7 @@ async function startMatch() {
     level: 1,
     tier: 1,
     exp: 0,
-    expNeed: 45,
+    expNeed: 50,
     score: 0,
     hp: baseHp,
     baseMaxHp: baseHp,
@@ -1033,29 +1033,45 @@ function hostUpdateWorld() {
   }
 }
 
+const localBossKillLock = {};
+const recentPvpKillReward = {};
+
 function damageBoss(bossId, dmg) {
   const b = bossesState[bossId];
-  if (!b || !b.alive) return;
+  if (!b || !b.alive || localBossKillLock[bossId]) return;
+  if (!Number.isFinite(dmg) || dmg <= 0) return;
+
   const bossRef = ref(db, `rooms/main/bosses/${bossId}`);
+  let killedByThisTx = false;
+
   runTransaction(bossRef, (curr) => {
-    if (!curr || !curr.alive) return curr;
+    killedByThisTx = false;
+    if (!curr) return curr;
+    // Nếu Boss đã chết trên server thì HỦY transaction ngay lập tức
+    if (!curr.alive || curr.hp <= 0) {
+      return;
+    }
     curr.hp -= Math.round(dmg);
     curr.lastHitBy = currentUser.uid;
     if (curr.hp <= 0) {
       curr.hp = 0;
       curr.alive = false;
       curr.respawnAt = Date.now() + BOSS_RESPAWN_MS;
+      killedByThisTx = true;
     }
     return curr;
   }).then((res) => {
-    const val = res.snapshot.val();
-    if (val && !val.alive && val.lastHitBy === currentUser.uid) {
+    if (res.committed && killedByThisTx) {
+      localBossKillLock[bossId] = true;
+      setTimeout(() => { delete localBossKillLock[bossId]; }, 5000);
+
+      const val = res.snapshot.val();
       sessionStats.bossKilled += 1;
       sessionStats.coinsEarned += 80;
       gainExp(350);
-      addToast(`🏆 HẠ GỤC ${val.name.toUpperCase()}! (+80 Coin, +350 EXP)`);
+      addToast(`🏆 HẠ GỤC ${(val?.name || "BOSS").toUpperCase()}! (+80 Coin, +350 EXP)`);
     }
-  });
+  }).catch(() => {});
 }
 
 function sendPvpHit(targetUid, dmg, isCrit = false, isReflectFx = false) {
@@ -1309,15 +1325,19 @@ function performBite() {
       }
 
       if ((p.hp || 100) <= dmg) {
-        sessionStats.fishKilled += 1;
-        sessionStats.coinsEarned += 15;
-        gainExp(90 + (p.level || 1) * 12);
-        if (myFish.healOnKill > 0 && myFish.hp < eff.maxHp) {
-          const healed = Math.min(myFish.healOnKill, eff.maxHp - myFish.hp);
-          myFish.hp += healed;
-          addFloatingText(myFish.x, myFish.y - 25, `+${Math.round(healed)} HP`, "#51cf66", 1);
+        const nowTs = Date.now();
+        if (!recentPvpKillReward[p.uid] || nowTs - recentPvpKillReward[p.uid] > 4000) {
+          recentPvpKillReward[p.uid] = nowTs;
+          sessionStats.fishKilled += 1;
+          sessionStats.coinsEarned += 15;
+          gainExp(90 + (p.level || 1) * 12);
+          if (myFish.healOnKill > 0 && myFish.hp < eff.maxHp) {
+            const healed = Math.min(myFish.healOnKill, eff.maxHp - myFish.hp);
+            myFish.hp += healed;
+            addFloatingText(myFish.x, myFish.y - 25, `+${Math.round(healed)} HP`, "#51cf66", 1);
+          }
+          addToast(`🔥 Bạn vừa nuốt chửng ${p.name}! (+15 Coin)`);
         }
-        addToast(`🔥 Bạn vừa nuốt chửng ${p.name}! (+15 Coin)`);
       }
     }
   });
@@ -1621,6 +1641,7 @@ function updateGame(dt) {
 }
 
 function damageAiFish(ai, dmg, isCrit = false, fxX = ai.x, fxY = ai.y) {
+  if (!ai || ai.hp <= 0 || !Number.isFinite(dmg) || dmg <= 0) return;
   ai.hp -= dmg;
   if (isCrit) {
     addFloatingText(fxX, fxY - 26, `💥 CHÍ MẠNG -${Math.round(dmg)}`, "#ff922b", 1.25);
@@ -1647,14 +1668,21 @@ function damageAiFish(ai, dmg, isCrit = false, fxX = ai.x, fxY = ai.y) {
 }
 
 function gainExp(amount) {
+  if (!myFish || !Number.isFinite(amount) || amount <= 0) return;
   const eff = getEffectiveStats();
-  myFish.exp += amount * eff.expMult;
-  myFish.score += amount * eff.expMult;
+  const gained = amount * (eff ? eff.expMult : 1);
+  if (!Number.isFinite(gained) || gained <= 0) return;
 
-  while (myFish.exp >= myFish.expNeed) {
+  myFish.exp += gained;
+  myFish.score += gained;
+
+  let safetyLoops = 0;
+  while (myFish.exp >= myFish.expNeed && safetyLoops < 15) {
+    safetyLoops++;
     myFish.exp -= myFish.expNeed;
     myFish.level += 1;
-    myFish.expNeed = Math.round(45 + (myFish.level - 1) * 18);
+    // Mỗi khi lên 1 cấp, lượng EXP cần thiết tăng thêm 50%
+    myFish.expNeed = Math.max(10, Math.round(myFish.expNeed * 1.5));
 
     const oldTier = myFish.tier;
     const newTier = getTierFromLevel(myFish.level);
@@ -1698,8 +1726,9 @@ function openBuffChoice() {
       <div class="b-desc">${b.desc}</div>
     `;
     card.onclick = () => {
+      if (!choosingBuff) return;
       applyBuff(b.id);
-      pendingLevelUps -= 1;
+      pendingLevelUps = Math.max(0, pendingLevelUps - 1);
       document.getElementById("buff-modal").classList.add("hidden");
       choosingBuff = false;
       if (pendingLevelUps > 0) openBuffChoice();
