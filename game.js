@@ -1,6 +1,8 @@
 import { auth, googleProvider, db } from "./firebase-config.js";
 import {
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   onAuthStateChanged,
   signOut
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
@@ -38,7 +40,7 @@ const FISH_TYPES = {
     cost: 0,
     dmgMult: 1.0,
     speedMult: 0.95,
-    dmgTakenMult: 0.80, // Giảm 20% sát thương nhận vào
+    dmgTakenMult: 0.80,
     healOnFood: 1,
     healOnKill: 0,
     skillName: "Mai Bất Tử",
@@ -70,7 +72,7 @@ const FISH_TYPES = {
     cost: 100,
     dmgMult: 1.15,
     speedMult: 1.15,
-    dmgTakenMult: 0.85, // Giảm 15% sát thương nhận vào
+    dmgTakenMult: 0.85,
     healOnFood: 5,
     healOnKill: 5,
     skillName: "Hoàng Uy",
@@ -134,13 +136,22 @@ function showScreen(name) {
 }
 
 // ==================== AUTH & LOBBY ====================
+getRedirectResult(auth).catch((err) => {
+  document.getElementById("login-status").textContent = "Lỗi đăng nhập: " + err.message;
+});
+
 document.getElementById("btn-google-login").addEventListener("click", async () => {
   const status = document.getElementById("login-status");
   status.textContent = "Đang kết nối Google...";
   try {
     await signInWithPopup(auth, googleProvider);
   } catch (err) {
-    status.textContent = "Lỗi đăng nhập: " + err.message;
+    if (err.code === "auth/popup-blocked") {
+      status.textContent = "Đang chuyển hướng đăng nhập Google...";
+      await signInWithRedirect(auth, googleProvider);
+    } else {
+      status.textContent = "Lỗi đăng nhập: " + err.message + " (Nếu mở từ Messenger/Zalo hãy chuyển sang Safari/Chrome)";
+    }
   }
 });
 
@@ -186,7 +197,6 @@ function renderLobby() {
   document.getElementById("input-nickname").value = userData.nickname;
   document.getElementById("lobby-coins").textContent = userData.coins;
 
-  // Render 4 Fish
   const fishList = document.getElementById("fish-list");
   fishList.innerHTML = "";
   Object.values(FISH_TYPES).forEach(f => {
@@ -206,7 +216,6 @@ function renderLobby() {
     fishList.appendChild(card);
   });
 
-  // Render Upgrades
   const upgDefs = [
     { key: "hp", name: "Máu Khởi Đầu", bonus: "+20 HP / cấp" },
     { key: "speed", name: "Tốc Độ Bơi", bonus: "+4% Tốc độ / cấp" },
@@ -236,7 +245,6 @@ function renderLobby() {
     upgList.appendChild(div);
   });
 
-  // Render Quests
   const qList = document.getElementById("quest-list");
   qList.innerHTML = "";
   QUEST_TEMPLATES.forEach(q => {
@@ -304,8 +312,14 @@ let floatingTexts = [];
 let projectiles = [];
 let biteEffects = [];
 let bossState = null;
+
+// Trạng thái điều khiển PC & Mobile
 let mousePos = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
-let leftMouseDown = false;
+let biteHold = false;
+let isTouchDevice = ("ontouchstart" in window) || (navigator.maxTouchPoints > 0);
+let inputMode = isTouchDevice ? "touch" : "mouse";
+let joystick = { active: false, touchId: null, angle: 0, power: 0 };
+
 let camera = { x: MAP_SIZE / 2, y: MAP_SIZE / 2 };
 let sessionStats = { foodEaten: 0, fishKilled: 0, bossKilled: 0, reachedTier3: 0, coinsEarned: 0 };
 let pendingLevelUps = 0;
@@ -324,6 +338,15 @@ function resizeCanvas() {
 }
 window.addEventListener("resize", resizeCanvas);
 resizeCanvas();
+
+function refreshMobileControlsVisibility() {
+  const mc = document.getElementById("mobile-controls");
+  if (inputMode === "touch" || isTouchDevice) {
+    mc.classList.remove("hidden");
+  } else {
+    mc.classList.add("hidden");
+  }
+}
 
 document.getElementById("btn-play").addEventListener("click", startMatch);
 
@@ -375,7 +398,8 @@ async function startMatch() {
   sessionStats = { foodEaten: 0, fishKilled: 0, bossKilled: 0, reachedTier3: 0, coinsEarned: 0 };
   pendingLevelUps = 0;
   choosingBuff = false;
-  leftMouseDown = false;
+  biteHold = false;
+  resetJoystick();
   floatingTexts = [];
   projectiles = [];
   biteEffects = [];
@@ -394,6 +418,7 @@ async function startMatch() {
   document.getElementById("buff-modal").classList.add("hidden");
 
   showScreen("game");
+  refreshMobileControlsVisibility();
   inGame = true;
 
   connectRealtimeRoom();
@@ -609,21 +634,24 @@ function disconnectRealtimeRoom() {
   }
 }
 
-// ==================== ĐIỀU KHIỂN: CẮN CHUỘT TRÁI & SKILL ====================
+// ==================== ĐIỀU KHIỂN PC & CẢM ỨNG MOBILE ====================
 canvas.addEventListener("mousemove", (e) => {
+  if (inputMode === "touch" && joystick.active) return;
+  inputMode = "mouse";
   mousePos.x = e.clientX;
   mousePos.y = e.clientY;
 });
 
 canvas.addEventListener("mousedown", (e) => {
   if (e.button === 0) {
-    leftMouseDown = true;
+    inputMode = "mouse";
+    biteHold = true;
     performBite();
   }
 });
 
 window.addEventListener("mouseup", (e) => {
-  if (e.button === 0) leftMouseDown = false;
+  if (e.button === 0) biteHold = false;
 });
 
 canvas.addEventListener("contextmenu", (e) => {
@@ -644,6 +672,106 @@ window.addEventListener("keydown", (e) => {
   }
 });
 
+// Tự bật UI cảm ứng khi người dùng chạm vào màn hình
+window.addEventListener("touchstart", () => {
+  isTouchDevice = true;
+  inputMode = "touch";
+  if (inGame) refreshMobileControlsVisibility();
+}, { passive: true });
+
+// ---- CẦN GẠT JOYSTICK ĐA ĐIỂM ----
+const joystickZone = document.getElementById("joystick-zone");
+const joystickBase = document.getElementById("joystick-base");
+const joystickKnob = document.getElementById("joystick-knob");
+
+function resetJoystick() {
+  joystick.active = false;
+  joystick.touchId = null;
+  joystick.power = 0;
+  joystickKnob.style.transform = "translate(0px, 0px)";
+}
+
+function updateJoystickFromTouch(touch) {
+  const rect = joystickBase.getBoundingClientRect();
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
+  const maxDist = rect.width * 0.42;
+
+  const dx = touch.clientX - cx;
+  const dy = touch.clientY - cy;
+  const dist = Math.hypot(dx, dy);
+  const clamped = Math.min(maxDist, dist);
+  const angle = Math.atan2(dy, dx);
+
+  if (dist > 4) {
+    joystick.angle = angle;
+  }
+  joystick.power = clamped / maxDist;
+  const kx = Math.cos(angle) * clamped;
+  const ky = Math.sin(angle) * clamped;
+  joystickKnob.style.transform = `translate(${kx}px, ${ky}px)`;
+}
+
+joystickZone.addEventListener("touchstart", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  inputMode = "touch";
+  if (joystick.touchId === null && e.changedTouches.length > 0) {
+    const t = e.changedTouches[0];
+    joystick.active = true;
+    joystick.touchId = t.identifier;
+    updateJoystickFromTouch(t);
+  }
+}, { passive: false });
+
+joystickZone.addEventListener("touchmove", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  for (const t of e.changedTouches) {
+    if (t.identifier === joystick.touchId) {
+      updateJoystickFromTouch(t);
+      break;
+    }
+  }
+}, { passive: false });
+
+function endJoystickTouch(e) {
+  for (const t of e.changedTouches) {
+    if (t.identifier === joystick.touchId) {
+      resetJoystick();
+      break;
+    }
+  }
+}
+joystickZone.addEventListener("touchend", endJoystickTouch);
+joystickZone.addEventListener("touchcancel", endJoystickTouch);
+
+// ---- NÚT CẮN & SKILL TRÊN MOBILE ----
+const btnMobileBite = document.getElementById("btn-mobile-bite");
+const btnMobileSkill = document.getElementById("btn-mobile-skill");
+
+btnMobileBite.addEventListener("touchstart", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  inputMode = "touch";
+  biteHold = true;
+  performBite();
+}, { passive: false });
+
+const stopMobileBite = (e) => {
+  e.preventDefault();
+  biteHold = false;
+};
+btnMobileBite.addEventListener("touchend", stopMobileBite, { passive: false });
+btnMobileBite.addEventListener("touchcancel", stopMobileBite, { passive: false });
+
+btnMobileSkill.addEventListener("touchstart", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  inputMode = "touch";
+  triggerSkill();
+}, { passive: false });
+
 // ==================== HÀM CẮN & ĐÁNH GIÁ ĐIỂM YẾU ĐUÔI ====================
 function evaluateBiteHit(biteX, biteY, biteRadius, targetX, targetY, targetAngle, targetRadius) {
   const dCenter = Math.hypot(targetX - biteX, targetY - biteY);
@@ -658,7 +786,6 @@ function evaluateBiteHit(biteX, biteY, biteRadius, targetX, targetY, targetAngle
   const hit = dCenter <= biteRadius + targetRadius || dTail <= biteRadius + targetRadius * 0.55;
   if (!hit) return { hit: false, isCrit: false, tailX, tailY };
 
-  // Chí mạng khi cắn trúng vùng đuôi (và tâm cú cắn gần đuôi hơn gần đầu)
   const isCrit = dTail <= biteRadius + targetRadius * 0.65 && dTail < dHead;
   return { hit: true, isCrit, tailX, tailY };
 }
@@ -669,13 +796,11 @@ function performBite() {
   myFish.biteCooldown = 0.38;
   const myRadius = getFishRadius(myFish.tier, myFish.sizeMult);
 
-  // Tầm cắn tỷ lệ thuận với kích thước cá
   const biteDist = myRadius * 0.95;
   const biteRadius = myRadius * 0.88;
   const biteX = myFish.x + Math.cos(myFish.angle) * biteDist;
   const biteY = myFish.y + Math.sin(myFish.angle) * biteDist;
 
-  // Hiệu ứng vệt cắn trước miệng
   biteEffects.push({
     x: biteX,
     y: biteY,
@@ -818,19 +943,28 @@ function updateGame(dt) {
   if (myFish.reflectTimer > 0) myFish.reflectTimer = Math.max(0, myFish.reflectTimer - dt);
   if (myFish.biteCooldown > 0) myFish.biteCooldown = Math.max(0, myFish.biteCooldown - dt);
 
-  // Giữ chuột trái để cắn liên tục theo tốc độ hồi cắn
-  if (leftMouseDown && myFish.biteCooldown <= 0) {
+  if (biteHold && myFish.biteCooldown <= 0) {
     performBite();
   }
 
-  // Di chuyển theo chuột
-  const dx = mousePos.x - canvas.width / 2;
-  const dy = mousePos.y - canvas.height / 2;
-  const distToCursor = Math.hypot(dx, dy);
-  myFish.angle = Math.atan2(dy, dx);
+  // Di chuyển bằng Joystick (Mobile) hoặc Chuột (PC)
+  let moveFactor = 0;
+  if (inputMode === "touch") {
+    if (joystick.active) {
+      myFish.angle = joystick.angle;
+      moveFactor = joystick.power;
+    } else if (myFish.dashTimer > 0) {
+      moveFactor = 1;
+    }
+  } else {
+    const dx = mousePos.x - canvas.width / 2;
+    const dy = mousePos.y - canvas.height / 2;
+    const distToCursor = Math.hypot(dx, dy);
+    myFish.angle = Math.atan2(dy, dx);
+    moveFactor = Math.min(1, distToCursor / 60);
+  }
 
   const curSpeed = myFish.speed * (myFish.dashTimer > 0 ? 2.15 : 1.0);
-  const moveFactor = Math.min(1, distToCursor / 60);
   myFish.x = Math.max(40, Math.min(MAP_SIZE - 40, myFish.x + Math.cos(myFish.angle) * curSpeed * moveFactor * dt));
   myFish.y = Math.max(40, Math.min(MAP_SIZE - 40, myFish.y + Math.sin(myFish.angle) * curSpeed * moveFactor * dt));
 
@@ -839,7 +973,7 @@ function updateGame(dt) {
 
   const myRadius = getFishRadius(myFish.tier, myFish.sizeMult);
 
-  // Ăn mồi & Hồi máu (1 HP cho cá thường, 5 HP cho Cá Của Vua)
+  // Ăn mồi & Hồi máu
   const eatRadius = (myRadius + 24) * myFish.eatRangeBonus;
   for (let i = foods.length - 1; i >= 0; i--) {
     const f = foods[i];
@@ -862,7 +996,6 @@ function updateGame(dt) {
     }
   }
 
-  // Đạn kỹ năng (Cá chim)
   for (let i = projectiles.length - 1; i >= 0; i--) {
     const pr = projectiles[i];
     pr.x += pr.vx * dt;
@@ -882,7 +1015,6 @@ function updateGame(dt) {
     if (hit || pr.life <= 0) projectiles.splice(i, 1);
   }
 
-  // AI Cá di chuyển & tấn công ngược lại người chơi (người chơi phải tự bấm chuột trái để cắn lại)
   aiFishes.forEach(ai => {
     if (ai.biteCooldown > 0) ai.biteCooldown -= dt;
     ai.aiTimer -= dt;
@@ -904,7 +1036,6 @@ function updateGame(dt) {
     }
   });
 
-  // Boss tấn công người chơi khi áp sát
   if (bossState && bossState.alive) {
     const bossR = getFishRadius(bossState.tier, 1.35);
     const distBoss = Math.hypot(bossState.x - myFish.x, bossState.y - myFish.y);
@@ -916,13 +1047,11 @@ function updateGame(dt) {
     }
   }
 
-  // Hiệu ứng vệt cắn
   for (let i = biteEffects.length - 1; i >= 0; i--) {
     biteEffects[i].life -= dt;
     if (biteEffects[i].life <= 0) biteEffects.splice(i, 1);
   }
 
-  // Bong bóng & chữ bay
   bubbles.forEach(b => {
     b.y -= b.v * dt;
     if (b.y < 0) b.y = MAP_SIZE;
@@ -984,7 +1113,8 @@ function gainExp(amount) {
 
 function openBuffChoice() {
   choosingBuff = true;
-  leftMouseDown = false;
+  biteHold = false;
+  resetJoystick();
   myFish.shieldTimer = Math.max(myFish.shieldTimer, 4.0);
   const shuffled = [...BUFF_POOL].sort(() => Math.random() - 0.5).slice(0, 3);
   const container = document.getElementById("buff-choices");
@@ -1032,6 +1162,9 @@ function getFishRadius(tier, sizeMult = 1) {
 // ==================== VẼ THỦY CUNG & CÁ "VẠN CÂN" ====================
 function renderGame() {
   const w = canvas.width, h = canvas.height;
+  // Tự điều chỉnh độ thu phóng để điện thoại màn nhỏ vẫn có tầm nhìn rộng
+  const viewScale = Math.min(1.0, Math.max(0.56, Math.min(w, h) / 760));
+
   const grad = ctx.createLinearGradient(0, 0, 0, h);
   grad.addColorStop(0, "#094c78");
   grad.addColorStop(0.6, "#042b48");
@@ -1055,7 +1188,9 @@ function renderGame() {
   ctx.restore();
 
   ctx.save();
-  ctx.translate(w / 2 - camera.x, h / 2 - camera.y);
+  ctx.translate(w / 2, h / 2);
+  ctx.scale(viewScale, viewScale);
+  ctx.translate(-camera.x, -camera.y);
 
   ctx.strokeStyle = "rgba(77, 184, 255, 0.45)";
   ctx.lineWidth = 10;
@@ -1109,7 +1244,6 @@ function renderGame() {
     drawAnimatedFish(myFish.x, myFish.y, myFish.angle, myFish.species, myFish.tier, myFish.sizeMult, myFish.name, myFish.hp, myFish.maxHp, myFish.uid === top1Uid, false, myFish.shieldTimer > 0, t);
   }
 
-  // Vẽ hiệu ứng táp cắn & tia nổ chí mạng
   biteEffects.forEach(ef => {
     const alpha = ef.life / ef.maxLife;
     ctx.save();
@@ -1331,12 +1465,19 @@ function updateHUD() {
 
   const cfg = FISH_TYPES[myFish.species];
   document.getElementById("hud-skill-name").textContent = cfg.skillName;
+  document.getElementById("mobile-skill-label").textContent = cfg.skillName;
+
   const cdOv = document.getElementById("hud-skill-cd");
+  const mobileCdOv = document.getElementById("mobile-skill-cd");
   if (myFish.skillTimer > 0) {
+    const txt = myFish.skillTimer.toFixed(1) + "s";
     cdOv.style.opacity = "1";
-    cdOv.textContent = myFish.skillTimer.toFixed(1) + "s";
+    cdOv.textContent = txt;
+    mobileCdOv.style.opacity = "1";
+    mobileCdOv.textContent = txt;
   } else {
     cdOv.style.opacity = "0";
+    mobileCdOv.style.opacity = "0";
   }
 
   const buffBar = document.getElementById("active-buffs-bar");
@@ -1347,7 +1488,7 @@ function updateHUD() {
 
   const all = [myFish, ...Object.values(remotePlayers)].filter(Boolean);
   all.sort((a, b) => (b.score || 0) - (a.score || 0));
-  document.getElementById("ingame-leaderboard").innerHTML = all.slice(0, 6).map((p, i) => `
+  document.getElementById("ingame-leaderboard").innerHTML = all.slice(0, 5).map((p, i) => `
     <div class="lb-row ${p.uid === myFish.uid ? "me" : ""}">
       <span>${i === 0 ? "👑" : `${i + 1}.`} ${escapeHtml(p.name)}</span>
       <span>${Math.round(p.score || 0)}</span>
@@ -1361,12 +1502,14 @@ function updateHUD() {
     banner.textContent = `👹 Boss Cấp ${bossState.tier}: ${Math.round(bossState.hp)} HP`;
   } else {
     const sec = Math.max(0, Math.ceil((bossState.respawnAt - Date.now()) / 1000));
-    banner.textContent = `⏳ Boss hồi sinh sau: ${sec}s`;
+    banner.textContent = `⏳ Boss hồi sinh: ${sec}s`;
   }
 }
 
 // ==================== THOÁT / CHẾT & LƯU NHIỆM VỤ ====================
 document.getElementById("btn-menu-exit").addEventListener("click", () => {
+  biteHold = false;
+  resetJoystick();
   document.getElementById("exit-modal").classList.remove("hidden");
 });
 document.getElementById("btn-resume").addEventListener("click", () => {
@@ -1388,7 +1531,8 @@ function handleDeath(reason) {
 async function finishMatch(isDead, reason) {
   if (!inGame) return;
   inGame = false;
-  leftMouseDown = false;
+  biteHold = false;
+  resetJoystick();
   cancelAnimationFrame(animFrameId);
   disconnectRealtimeRoom();
 

@@ -2,14 +2,13 @@
 <html lang="vi">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>Thủy Cung Vạn Cân - Đại Chiến Tiến Hóa</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <!-- MÀN HÌNH ĐĂNG NHẬP -->
   <div id="login-screen" class="screen active">
-    <div class="ocean-bg-decor"></div>
     <div class="card login-card">
       <div class="game-badge">ONLINE MULTIPLAYER</div>
       <h1 class="game-title">THỦY CUNG <span>VẠN CÂN</span></h1>
@@ -39,13 +38,13 @@
     </div>
 
     <div class="lobby-grid">
-      <!-- CỘT TRÁI: CHỌN CÁ -->
+      <!-- CHỌN CÁ -->
       <div class="panel fish-panel">
         <h2>🐟 Chọn Loài Cá</h2>
         <div id="fish-list" class="fish-grid"></div>
       </div>
 
-      <!-- CỘT GIỮA: VÀO GAME & NÂNG CẤP -->
+      <!-- VÀO GAME & NÂNG CẤP -->
       <div class="panel center-panel">
         <h2>⚡ Nâng Cấp Chỉ Số Khởi Đầu</h2>
         <div id="upgrade-list" class="upgrade-list"></div>
@@ -53,11 +52,11 @@
         <div class="play-zone">
           <div id="selected-fish-summary" class="selected-summary"></div>
           <button id="btn-play" class="btn-play">VÀO THỦY CUNG CHIẾN ĐẤU</button>
-          <p class="controls-hint">Di chuyển: <b>Chuột</b> | Cắn: <b>Chuột trái</b> | Dùng Skill: <b>Space / Chuột phải</b></p>
+          <p class="controls-hint">PC: <b>Chuột</b> di chuyển, <b>Chuột trái</b> cắn, <b>Space/Chuột phải</b> Skill | Mobile: <b>Joystick & Nút cảm ứng</b></p>
         </div>
       </div>
 
-      <!-- CỘT PHẢI: NHIỆM VỤ & BXH -->
+      <!-- NHIỆM VỤ & BXH -->
       <div class="panel quest-panel">
         <h2>📜 Bảng Nhiệm Vụ</h2>
         <div id="quest-list" class="quest-list"></div>
@@ -81,7 +80,7 @@
         <canvas id="minimap-canvas" width="150" height="150"></canvas>
         <div class="minimap-legend">
           <span class="dot red"></span>Boss
-          <span class="dot yellow"></span>Người chơi
+          <span class="dot yellow"></span>Player
           <span>👑</span>Top 1
         </div>
       </div>
@@ -115,9 +114,30 @@
     <div id="buff-modal" class="buff-overlay hidden">
       <div class="buff-header">
         <h2>✨ TIẾN HÓA THÀNH CÔNG! ✨</h2>
-        <p>Chọn 1 Buff cường hóa sức mạnh (Đang được bảo vệ 4 giây)</p>
+        <p>Chọn 1 Buff cường hóa (Đang được bảo vệ 4 giây)</p>
       </div>
       <div id="buff-choices" class="buff-cards"></div>
+    </div>
+
+    <!-- ĐIỀU KHIỂN CẢM ỨNG CHO ĐIỆN THOẠI -->
+    <div id="mobile-controls" class="mobile-controls hidden">
+      <div id="joystick-zone" class="joystick-zone">
+        <div id="joystick-base" class="joystick-base">
+          <div id="joystick-knob" class="joystick-knob"></div>
+        </div>
+      </div>
+
+      <div class="mobile-actions">
+        <button id="btn-mobile-skill" class="btn-touch-action btn-touch-skill" type="button">
+          <span class="touch-icon">⚡</span>
+          <span class="touch-label" id="mobile-skill-label">SKILL</span>
+          <div class="touch-cd" id="mobile-skill-cd"></div>
+        </button>
+        <button id="btn-mobile-bite" class="btn-touch-action btn-touch-bite" type="button">
+          <span class="touch-icon">🦷</span>
+          <span class="touch-label">CẮN</span>
+        </button>
+      </div>
     </div>
 
     <!-- PHÍA DƯỚI NGAY GIỮA: MÁU, EXP, TIẾN HÓA, BUFF, SKILL -->
