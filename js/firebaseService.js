@@ -79,7 +79,7 @@ export async function resetWorldMap() {
     bossesInit[sp.id] = {
       id: sp.id, name: sp.name, alive: true, tier: bossTier, level: 10,
       x: sp.x, y: sp.y, homeX: sp.x, homeY: sp.y, angle: idx * 2,
-      hp: maxHp, maxHp, dmg: 28 + bossTier * 12, respawnAt: 0, lastHitBy: ""
+      hp: maxHp, maxHp, dmg: 50 + bossTier * 50, respawnAt: 0, lastHitBy: ""
     };
   });
   const now = Date.now();
