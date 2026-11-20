@@ -384,6 +384,35 @@ body, html {
   touch-action: none;
 }
 
+/* BANNER SỰ KIỆN PHÍA TRÊN CHÍNH GIỮA */
+.event-banner {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 28;
+  background: linear-gradient(90deg, rgba(180, 83, 9, 0.92), rgba(217, 119, 6, 0.92), rgba(180, 83, 9, 0.92));
+  border: 2px solid #fde047;
+  border-radius: 14px;
+  padding: 7px 20px;
+  text-align: center;
+  box-shadow: 0 6px 24px rgba(251, 191, 36, 0.4);
+  pointer-events: none;
+  max-width: 90vw;
+}
+.event-banner.hidden { display: none; }
+.event-banner .ev-title {
+  font-size: 14px;
+  font-weight: 900;
+  color: #fef08a;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.7);
+}
+.event-banner .ev-desc {
+  font-size: 12px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
 .hud-top-left {
   position: fixed;
   top: 12px;
@@ -449,7 +478,7 @@ body, html {
   position: fixed;
   top: 12px;
   right: 12px;
-  width: 215px;
+  width: 225px;
   z-index: 20;
   display: flex;
   flex-direction: column;
@@ -488,14 +517,26 @@ body, html {
   font-weight: 700;
 }
 
-.boss-banner {
-  background: rgba(140, 18, 18, 0.85);
+.boss-status-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.boss-row {
+  background: rgba(110, 16, 22, 0.85);
   border: 1px solid #ff6b6b;
   border-radius: 8px;
-  padding: 5px 8px;
-  font-size: 12px;
+  padding: 4px 8px;
+  font-size: 11px;
   font-weight: 700;
-  text-align: center;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.boss-row.respawning {
+  background: rgba(30, 41, 59, 0.85);
+  border-color: #94a3b8;
+  color: #fde047;
 }
 
 /* BOTTOM CENTER HUD */
@@ -505,7 +546,7 @@ body, html {
   left: 50%;
   transform: translateX(-50%);
   width: 92%;
-  max-width: 520px;
+  max-width: 580px;
   z-index: 20;
   display: flex;
   flex-direction: column;
@@ -547,6 +588,7 @@ body, html {
   font-weight: 800;
 }
 
+
 .bars-row {
   display: flex;
   align-items: center;
@@ -560,7 +602,7 @@ body, html {
 
 .skill-box {
   position: relative;
-  width: 60px;
+  width: 64px;
   height: 46px;
   border-radius: 10px;
   background: linear-gradient(135deg, #165e96, #0b3254);
@@ -571,18 +613,28 @@ body, html {
   justify-content: center;
   overflow: hidden;
   flex-shrink: 0;
+  padding: 2px;
 }
+.skill-box.ult-box {
+  background: linear-gradient(135deg, #9a3412, #431407);
+  border-color: #fbbf24;
+}
+.skill-box.ult-box.active-ult {
+  box-shadow: 0 0 14px #fbbf24;
+  border-color: #fef08a;
+}
+
 .skill-key { font-size: 9px; font-weight: 900; color: #ffd43b; }
-.skill-name { font-size: 11px; font-weight: 700; text-align: center; line-height: 1.1; }
+.skill-name { font-size: 10px; font-weight: 700; text-align: center; line-height: 1.1; }
 .skill-cd-overlay {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.72);
+  background: rgba(0, 0, 0, 0.74);
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 900;
-  font-size: 14px;
+  font-size: 13px;
   color: #fff;
   opacity: 0;
 }
@@ -666,11 +718,11 @@ body, html {
 
 .mobile-actions {
   position: fixed;
-  right: 16px;
-  bottom: 124px;
+  right: 14px;
+  bottom: 120px;
   display: flex;
   align-items: flex-end;
-  gap: 14px;
+  gap: 10px;
   pointer-events: auto;
   touch-action: none;
 }
@@ -687,36 +739,45 @@ body, html {
   overflow: hidden;
   touch-action: none;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  padding: 4px;
 }
 .btn-touch-action:active {
   transform: scale(0.92);
 }
 
 .btn-touch-bite {
-  width: 82px;
-  height: 82px;
+  width: 78px;
+  height: 78px;
   background: radial-gradient(circle at 35% 30%, #ff8787, #e03131);
   border-color: #ffd43b;
 }
 .btn-touch-skill {
-  width: 66px;
-  height: 66px;
+  width: 60px;
+  height: 60px;
   background: radial-gradient(circle at 35% 30%, #4dabf7, #1864ab);
   border-color: #74c0fc;
 }
+.btn-touch-ult {
+  width: 60px;
+  height: 60px;
+  background: radial-gradient(circle at 35% 30%, #fbbf24, #b45309);
+  border-color: #fef08a;
+  margin-bottom: 48px;
+}
 
-.touch-icon { font-size: 24px; line-height: 1; }
-.btn-touch-skill .touch-icon { font-size: 20px; }
-.touch-label { font-size: 10px; font-weight: 900; margin-top: 2px; }
+.touch-icon { font-size: 22px; line-height: 1; }
+.btn-touch-skill .touch-icon,
+.btn-touch-ult .touch-icon { font-size: 17px; }
+.touch-label { font-size: 9px; font-weight: 900; margin-top: 2px; text-align: center; line-height: 1.05; }
 
 .touch-cd {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.72);
+  background: rgba(0, 0, 0, 0.75);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 900;
   opacity: 0;
 }
@@ -810,13 +871,8 @@ body, html {
   user-select: text;
   -webkit-user-select: text;
 }
-.chat-msg .c-name {
-  font-weight: 800;
-  color: #74c0fc;
-}
-.chat-msg.me .c-name {
-  color: #ffd43b;
-}
+.chat-msg .c-name { font-weight: 800; color: #74c0fc; }
+.chat-msg.me .c-name { color: #ffd43b; }
 .chat-form {
   display: flex;
   border-top: 1px solid rgba(77, 184, 255, 0.25);
@@ -930,7 +986,7 @@ body, html {
 
 #toast-container {
   position: fixed;
-  top: 66px;
+  top: 72px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 30;
@@ -969,40 +1025,46 @@ body, html {
   .btn-hamburger { width: 34px; height: 34px; }
   .btn-hamburger span { width: 17px; }
   .minimap-wrap { padding: 4px; }
-  #minimap-canvas { width: 96px; height: 96px; }
-  .minimap-legend { font-size: 9px; gap: 4px; }
+  #minimap-canvas { width: 92px; height: 92px; }
+  .minimap-legend { font-size: 8px; gap: 4px; }
 
-  .hud-top-right { top: 8px; right: 8px; width: 148px; }
+  .hud-top-right { top: 8px; right: 8px; width: 145px; }
   .leaderboard-box { padding: 6px 8px; }
   .lb-title { font-size: 11px; }
   .lb-row { font-size: 10px; }
-  .boss-banner { font-size: 10px; padding: 4px 6px; }
+  .boss-row { font-size: 9.5px; padding: 3px 6px; }
+
+  .event-banner { top: 64px; padding: 5px 12px; }
+  .event-banner .ev-title { font-size: 12px; }
+  .event-banner .ev-desc { font-size: 10.5px; }
 
   .hud-bottom-center { bottom: 8px; width: 94%; }
   .skill-box { display: none; }
   .buff-card { width: 145px; padding: 12px 8px; }
   .buff-card .b-icon { font-size: 26px; }
 
-  .chat-widget { top: 132px; left: 8px; }
+  .chat-widget { top: 128px; left: 8px; }
   .chat-messages { height: 115px; }
 }
 
 @media (max-height: 500px) {
-  #minimap-canvas { width: 88px; height: 88px; }
+  #minimap-canvas { width: 84px; height: 84px; }
   .minimap-legend { display: none; }
-  .hud-top-right { width: 155px; }
+  .hud-top-right { width: 150px; }
+  .event-banner { top: 8px; padding: 4px 12px; }
   .hud-bottom-center {
-    width: 46%;
-    max-width: 340px;
+    width: 44%;
+    max-width: 320px;
     bottom: 8px;
   }
-  .joystick-zone { left: 12px; bottom: 12px; width: 126px; height: 126px; }
-  .joystick-base { width: 100px; height: 100px; }
-  .joystick-knob { width: 42px; height: 42px; }
-  .mobile-actions { right: 14px; bottom: 16px; gap: 10px; }
-  .btn-touch-bite { width: 72px; height: 72px; }
-  .btn-touch-skill { width: 58px; height: 58px; }
+  .joystick-zone { left: 12px; bottom: 12px; width: 120px; height: 120px; }
+  .joystick-base { width: 96px; height: 96px; }
+  .joystick-knob { width: 40px; height: 40px; }
+  .mobile-actions { right: 12px; bottom: 14px; gap: 8px; }
+  .btn-touch-bite { width: 68px; height: 68px; }
+  .btn-touch-skill { width: 52px; height: 52px; }
+  .btn-touch-ult { width: 52px; height: 52px; margin-bottom: 36px; }
   .skill-box { display: none; }
-  .chat-widget { top: 108px; left: 8px; }
+  .chat-widget { top: 104px; left: 8px; }
   .chat-messages { height: 90px; }
 }

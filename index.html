@@ -12,7 +12,7 @@
     <div class="card login-card">
       <div class="game-badge">ONLINE MULTIPLAYER</div>
       <h1 class="game-title">THỦY CUNG <span>VẠN CÂN</span></h1>
-      <p class="subtitle">Săn mồi • Tiến hóa Bá Khí • Hạ gục Boss Thủy Cung</p>
+      <p class="subtitle">Săn mồi • Tiến hóa Bá Khí • Hạ gục 3 Boss Thủy Cung</p>
       <button id="btn-google-login" class="btn-google">
         <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" />
         Đăng nhập bằng Google
@@ -38,13 +38,11 @@
     </div>
 
     <div class="lobby-grid">
-      <!-- CHỌN CÁ -->
       <div class="panel fish-panel">
         <h2>🐟 Chọn Loài Cá</h2>
         <div id="fish-list" class="fish-grid"></div>
       </div>
 
-      <!-- VÀO GAME & NÂNG CẤP -->
       <div class="panel center-panel">
         <h2>⚡ Nâng Cấp Chỉ Số Khởi Đầu</h2>
         <div id="upgrade-list" class="upgrade-list"></div>
@@ -52,11 +50,10 @@
         <div class="play-zone">
           <div id="selected-fish-summary" class="selected-summary"></div>
           <button id="btn-play" class="btn-play">VÀO THỦY CUNG CHIẾN ĐẤU</button>
-          <p class="controls-hint">PC: <b>Chuột</b> di chuyển, <b>Chuột trái</b> cắn, <b>Space/Chuột phải</b> Skill | Mobile: <b>Joystick & Nút cảm ứng</b></p>
+          <p class="controls-hint">PC: <b>Chuột</b> bơi • <b>Chuột trái</b> cắn • <b>Space/Chuột phải</b> Skill • <b>E/R</b> Skill Đặc Biệt</p>
         </div>
       </div>
 
-      <!-- NHIỆM VỤ HÀNG NGÀY & BXH -->
       <div class="panel quest-panel">
         <h2>📜 Nhiệm Vụ Hàng Ngày <span class="quest-reset-tag">Reset 00:00</span></h2>
         <div id="quest-list" class="quest-list"></div>
@@ -70,6 +67,12 @@
   <!-- MÀN HÌNH TRONG GAME -->
   <div id="game-screen" class="screen">
     <canvas id="game-canvas"></canvas>
+
+    <!-- PHÍA TRÊN CHÍNH GIỮA: THÔNG BÁO SỰ KIỆN -->
+    <div id="event-banner" class="event-banner hidden">
+      <div class="ev-title" id="event-title">🎉 SỰ KIỆN</div>
+      <div class="ev-desc" id="event-desc">Mô tả sự kiện</div>
+    </div>
 
     <!-- GÓC TRÊN TRÁI: NÚT 3 GẠCH + MINIMAP -->
     <div class="hud-top-left">
@@ -98,22 +101,22 @@
       </div>
     </div>
 
-    <!-- GÓC TRÊN PHẢI: BẢNG XẾP HẠNG TRONG TRẬN -->
+    <!-- GÓC TRÊN PHẢI: BẢNG XẾP HẠNG + TRẠNG THÁI 3 BOSS -->
     <div class="hud-top-right">
       <div class="leaderboard-box">
         <div class="lb-title">🏆 Bảng Xếp Hạng</div>
         <div id="ingame-leaderboard"></div>
       </div>
-      <div id="boss-timer-banner" class="boss-banner">Boss: Đang hoạt động</div>
+      <div id="boss-status-list" class="boss-status-list"></div>
     </div>
 
     <!-- THÔNG BÁO KILL / TIẾN HÓA -->
     <div id="toast-container"></div>
 
-    <!-- CHỌN 1 TRONG 3 BUFF KHI TIẾN HÓA -->
+    <!-- CHỌN 1 TRONG 3 BUFF KHI LÊN CẤP -->
     <div id="buff-modal" class="buff-overlay hidden">
       <div class="buff-header">
-        <h2>✨ TIẾN HÓA THÀNH CÔNG! ✨</h2>
+        <h2 id="buff-modal-title">✨ THĂNG CẤP! ✨</h2>
         <p>Chọn 1 Buff cường hóa (Đang được bảo vệ 4 giây)</p>
       </div>
       <div id="buff-choices" class="buff-cards"></div>
@@ -128,6 +131,11 @@
       </div>
 
       <div class="mobile-actions">
+        <button id="btn-mobile-ult" class="btn-touch-action btn-touch-ult" type="button">
+          <span class="touch-icon">🔥</span>
+          <span class="touch-label" id="mobile-ult-label">TUYỆT CHIÊU</span>
+          <div class="touch-cd" id="mobile-ult-cd"></div>
+        </button>
         <button id="btn-mobile-skill" class="btn-touch-action btn-touch-skill" type="button">
           <span class="touch-icon">⚡</span>
           <span class="touch-label" id="mobile-skill-label">SKILL</span>
@@ -140,16 +148,22 @@
       </div>
     </div>
 
-    <!-- PHÍA DƯỚI NGAY GIỮA: MÁU, EXP, TIẾN HÓA, BUFF, SKILL -->
+    <!-- PHÍA DƯỚI NGAY GIỮA: MÁU, EXP, TIẾN HÓA, BUFF, 2 SKILL -->
     <div class="hud-bottom-center">
       <div id="active-buffs-bar" class="active-buffs"></div>
-      <div class="evo-label" id="hud-evo-info">Bậc 1: Cá Con Tập Sự</div>
+      <div class="evo-label" id="hud-evo-info">Cấp 1 • Dạng 1: Cá Con Tập Sự</div>
 
       <div class="bars-row">
         <div class="skill-box" id="hud-skill-box">
           <div class="skill-key">SPACE</div>
           <div class="skill-name" id="hud-skill-name">Skill</div>
           <div class="skill-cd-overlay" id="hud-skill-cd"></div>
+        </div>
+
+        <div class="skill-box ult-box" id="hud-ult-box">
+          <div class="skill-key">E / R</div>
+          <div class="skill-name" id="hud-ult-name">Đặc biệt</div>
+          <div class="skill-cd-overlay" id="hud-ult-cd"></div>
         </div>
 
         <div class="stat-bars">
@@ -159,7 +173,7 @@
           </div>
           <div class="bar-wrap exp-wrap">
             <div class="bar-fill exp-fill" id="hud-exp-fill"></div>
-            <span class="bar-text" id="hud-exp-text">EXP: 0 / 100</span>
+            <span class="bar-text" id="hud-exp-text">EXP: 0 / 45</span>
           </div>
         </div>
       </div>
@@ -175,7 +189,7 @@
     </div>
   </div>
 
-  <!-- KHUNG CHAT ONLINE (DÙNG ĐƯỢC CẢ Ở SẢNH & TRONG TRẬN) -->
+  <!-- KHUNG CHAT ONLINE -->
   <div id="chat-widget" class="chat-widget hidden">
     <button id="chat-toggle-btn" class="chat-toggle-btn" type="button">
       💬 Chat <span id="chat-unread" class="chat-unread hidden">0</span>

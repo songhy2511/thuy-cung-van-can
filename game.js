@@ -13,7 +13,11 @@ import {
 
 // ==================== CẤU HÌNH GAME ====================
 const MAP_SIZE = 3200;
-const BOSS_RESPAWN_MS = 60000; // 1 phút
+const BASE_FOOD_COUNT = 240;
+const BOSS_RESPAWN_MS = 60000;   // 1 phút
+const EVENT_DURATION_MS = 30000; // Sự kiện kéo dài 30 giây
+const EVENT_INTERVAL_MS = 120000;// Mỗi 2 phút diễn ra 1 lần
+const DOMAIN_RADIUS = 340;       // Bán kính lĩnh vực Áp Chế Tuyệt Đối
 
 const FISH_TYPES = {
   swordfish: {
@@ -33,7 +37,8 @@ const FISH_TYPES = {
     healOnKill: 0,
     skillName: "Kiếm Đâm",
     skillCd: 5.0,
-    desc: "Sát thương +20%. Hồi 1 HP khi ăn mồi. Skill: Lướt đâm xuyên gây sát thương lớn."
+    ultName: "Lưỡi Kiếm Tinh Xảo",
+    desc: "ST +20%, hồi 1 HP khi ăn mồi. Đặc biệt: Lưỡi kiếm tinh xảo (+50% tầm cắn & ST, chém đứt)."
   },
   turtle: {
     id: "turtle",
@@ -52,7 +57,8 @@ const FISH_TYPES = {
     healOnKill: 0,
     skillName: "Mai Bất Tử",
     skillCd: 7.0,
-    desc: "Giảm 20% ST nhận vào. Hồi 1 HP khi ăn mồi. Skill: Bật giáp gai phản sát thương."
+    ultName: "Phòng Ngự Tuyệt Đối",
+    desc: "Giảm 20% ST nhận, hồi 1 HP khi ăn mồi. Đặc biệt: Miễn nhiễm ST, phản 100% ST."
   },
   butterfish: {
     id: "butterfish",
@@ -71,7 +77,8 @@ const FISH_TYPES = {
     healOnKill: 0,
     skillName: "Lướt Sóng",
     skillCd: 4.5,
-    desc: "Tốc độ bơi +20%. Hồi 1 HP khi ăn mồi. Skill: Tăng tốc cực đại & phóng thủy tiễn."
+    ultName: "Tốc Độ Ánh Sáng",
+    desc: "Tốc độ +20%, hồi 1 HP khi ăn mồi. Đặc biệt: +100% tốc độ, 50% né ST, tạo lưu ảnh."
   },
   kingfish: {
     id: "kingfish",
@@ -90,16 +97,32 @@ const FISH_TYPES = {
     healOnKill: 5,
     skillName: "Hoàng Uy",
     skillCd: 5.5,
-    desc: "Giá 100 Coin/ván. ST +15%, Tốc độ +15%, Giảm ST nhận 15%, Hồi 5 HP khi ăn mồi/nuốt cá."
+    ultName: "Áp Chế Tuyệt Đối",
+    desc: "Giá 100 Coin/ván. ST+15%, Tốc+15%, Giảm ST 15%, Hồi 5HP. Đặc biệt: Lĩnh vực áp chế huyết mạch."
   }
 };
 
+// 5 Dạng tiến hóa (đổi dạng mỗi 10 cấp: 1, 10, 20, 30, 40)
 const EVO_TIERS = [
-  { tier: 1, name: "Cá Con Tập Sự", expNeed: 100, baseRadius: 24 },
-  { tier: 2, name: "Chiến Ngư Thủy Cung", expNeed: 240, baseRadius: 33 },
-  { tier: 3, name: "Thủy Quái Vạn Cân", expNeed: 450, baseRadius: 43 },
-  { tier: 4, name: "Bá Chủ Biển Sâu", expNeed: 750, baseRadius: 55 },
-  { tier: 5, name: "Thần Ngư Hải Vương", expNeed: 1200, baseRadius: 68 }
+  { tier: 1, name: "Cá Con Tập Sự", baseRadius: 22 },
+  { tier: 2, name: "Chiến Ngư Thủy Cung", baseRadius: 31 },
+  { tier: 3, name: "Thủy Quái Vạn Cân", baseRadius: 41 },
+  { tier: 4, name: "Bá Chủ Biển Sâu", baseRadius: 52 },
+  { tier: 5, name: "Thần Ngư Hải Vương", baseRadius: 65 }
+];
+
+const EVENTS_POOL = [
+  { id: "feast", title: "🍖 ĐẠI TIỆC CỦA VUA CÁ", desc: "Lượng mồi trong Thủy Cung tăng thêm 50%!" },
+  { id: "blessing", title: "✨ PHÚC LỘC CỦA VUA CÁ", desc: "Kinh nghiệm (EXP) nhận được nhân đôi (x2)!" },
+  { id: "migration", title: "💨 BẦY CÁ DI CƯ", desc: "Tốc độ bơi toàn thủy cung tăng 50%!" },
+  { id: "predator", title: "⚔️ CÁ SĂN MỒI", desc: "Sát thương gây ra tăng 30%!" },
+  { id: "weakness", title: "🌀 CÁ SUY YẾU", desc: "Toàn bộ chỉ số cá bị giảm 20%!" }
+];
+
+const BOSS_SPAWNS = [
+  { id: "boss_0", name: "Boss Bắc Hải", x: 850, y: 850 },
+  { id: "boss_1", name: "Boss Đông Hải", x: 2350, y: 1050 },
+  { id: "boss_2", name: "Boss Nam Hải", x: 1600, y: 2350 }
 ];
 
 const BUFF_POOL = [
@@ -115,7 +138,7 @@ const BUFF_POOL = [
 const QUEST_TEMPLATES = [
   { id: "eat50", title: "Ăn 50 mồi thủy cung", target: 50, reward: 60, statKey: "foodEaten" },
   { id: "kill3", title: "Nuốt chửng 5 cá đối thủ", target: 5, reward: 120, statKey: "fishKilled" },
-  { id: "evo3", title: "Đạt tiến hóa Bậc 3", target: 1, reward: 90, statKey: "reachedTier3" },
+  { id: "evo3", title: "Đạt cấp 10 (Tiến hóa Dạng 2)", target: 1, reward: 90, statKey: "reachedTier2" },
   { id: "boss1", title: "Hạ gục 1 Boss Thủy Cung", target: 1, reward: 250, statKey: "bossKilled" },
   { id: "play3", title: "Hoàn thành 3 trận đấu", target: 3, reward: 75, statKey: "gamesPlayed" }
 ];
@@ -132,7 +155,7 @@ function getTodayDateVN() {
 const createFreshQuests = () => ({
   foodEaten: 0,
   fishKilled: 0,
-  reachedTier3: 0,
+  reachedTier2: 0,
   bossKilled: 0,
   gamesPlayed: 0,
   claimed: {},
@@ -195,7 +218,7 @@ document.getElementById("btn-google-login").addEventListener("click", async () =
       status.textContent = "Đang chuyển hướng đăng nhập Google...";
       await signInWithRedirect(auth, googleProvider);
     } else {
-      status.textContent = "Lỗi đăng nhập: " + err.message + " (Nếu mở từ Messenger/Zalo hãy chuyển sang Safari/Chrome)";
+      status.textContent = "Lỗi đăng nhập: " + err.message + " (Nếu mở từ Messenger/Zalo hãy mở bằng Chrome/Safari)";
     }
   }
 });
@@ -379,7 +402,7 @@ chatForm.addEventListener("submit", async (e) => {
   const text = chatInput.value.trim();
   if (!text) return;
   const now = Date.now();
-  if (now - lastChatSentAt < 800) return; // Chống spam
+  if (now - lastChatSentAt < 800) return;
   lastChatSentAt = now;
   chatInput.value = "";
 
@@ -393,7 +416,6 @@ chatForm.addEventListener("submit", async (e) => {
 
 function initChat() {
   stopChatListener();
-  // Trên PC mở sẵn khung chat cho tiện, trên Mobile thu gọn thành nút 💬 tránh vướng tay
   setChatOpen(!isTouchDevice && window.innerWidth > 768);
 
   const chatQuery = query(ref(db, "chat/messages"), limitToLast(25));
@@ -433,32 +455,29 @@ const ctx = canvas.getContext("2d");
 const miniCanvas = document.getElementById("minimap-canvas");
 const miniCtx = miniCanvas.getContext("2d");
 
-// Tải hình ảnh thức ăn từ Data/Images/thuc-an
-const foodImg = new Image();
-let foodImgReady = false;
-const foodPaths = [
-  "./Data/Images/thuc-an.png",
-  "./Data/Images/thuc-an.webp",
-  "./Data/Images/thuc-an.jpg"
-];
-let foodPathIdx = 0;
-foodImg.onload = () => { foodImgReady = true; };
-foodImg.onerror = () => {
-  foodPathIdx += 1;
-  if (foodPathIdx < foodPaths.length) {
-    foodImg.src = foodPaths[foodPathIdx];
-  }
-};
-foodImg.src = foodPaths[0];
+// Tải hình ảnh tài nguyên tùy chỉnh trong Data/Images/
+function loadOptionalImage(paths) {
+  const obj = { img: new Image(), ready: false };
+  let idx = 0;
+  obj.img.onload = () => { obj.ready = true; };
+  obj.img.onerror = () => {
+    idx += 1;
+    if (idx < paths.length) obj.img.src = paths[idx];
+  };
+  obj.img.src = paths[0];
+  return obj;
+}
 
-// Bộ nhớ đệm ảnh tiến hóa từng bậc cá (Data/Images/{loai}-{bac}.png hoặc boss.png)
+const foodImgObj = loadOptionalImage(["./Data/Images/thuc-an.png", "./Data/Images/thuc-an.webp", "./Data/Images/thuc-an.jpg"]);
+const slashImgObj = loadOptionalImage(["./Data/Images/slash-effect.png", "./Data/Images/slash-effect.webp"]);
+const kingDomainImgObj = loadOptionalImage(["./Data/Images/king-domain.png", "./Data/Images/king-domain.webp"]);
+
 const fishSpriteCache = {};
 function getFishSprite(species, tier) {
   const key = species === "boss" ? "boss" : `${species}-${tier}`;
   if (!fishSpriteCache[key]) {
-    const entry = { img: new Image(), ready: false, failed: false };
+    const entry = { img: new Image(), ready: false };
     entry.img.onload = () => { entry.ready = true; };
-    entry.img.onerror = () => { entry.failed = true; };
     entry.img.src = `./Data/Images/${key}.png`;
     fishSpriteCache[key] = entry;
   }
@@ -481,7 +500,11 @@ let bubbles = [];
 let floatingTexts = [];
 let projectiles = [];
 let biteEffects = [];
-let bossState = null;
+let reflectEffects = [];
+let afterimages = [];
+let afterimageSpawnTimer = 0;
+let bossesState = {};
+let eventState = null;
 
 let mousePos = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
 let biteHold = false;
@@ -490,7 +513,7 @@ let inputMode = isTouchDevice ? "touch" : "mouse";
 let joystick = { active: false, touchId: null, angle: 0, power: 0 };
 
 let camera = { x: MAP_SIZE / 2, y: MAP_SIZE / 2 };
-let sessionStats = { foodEaten: 0, fishKilled: 0, bossKilled: 0, reachedTier3: 0, coinsEarned: 0 };
+let sessionStats = { foodEaten: 0, fishKilled: 0, bossKilled: 0, reachedTier2: 0, coinsEarned: 0 };
 let pendingLevelUps = 0;
 let choosingBuff = false;
 
@@ -510,7 +533,7 @@ function resizeCanvas() {
   canvas.height = Math.floor(logicalH * dpr);
 
   const rect = miniCanvas.getBoundingClientRect();
-  miniLogicalSize = rect.width > 10 ? rect.width : (logicalW <= 768 ? 96 : 150);
+  miniLogicalSize = rect.width > 10 ? rect.width : (logicalW <= 768 ? 92 : 150);
   miniCanvas.width = Math.floor(miniLogicalSize * dpr);
   miniCanvas.height = Math.floor(miniLogicalSize * dpr);
 }
@@ -526,6 +549,116 @@ function refreshMobileControlsVisibility() {
   }
 }
 
+// ==================== TÍNH CHỈ SỐ ĐỘNG (SỰ KIỆN + SKILL ĐẶC BIỆT + LĨNH VỰC VUA) ====================
+function getTierFromLevel(lvl) {
+  return Math.min(EVO_TIERS.length, 1 + Math.floor(lvl / 10));
+}
+
+function getFishRadius(level, tier, sizeMult = 1) {
+  const t = Math.min(EVO_TIERS.length, Math.max(1, tier));
+  const baseR = EVO_TIERS[t - 1].baseRadius;
+  // Khi chưa đủ 10 cấp, mỗi cấp tăng dần kích thước (+4.5%/cấp)
+  const subLevel = t === 1 ? (level - 1) : (level % 10);
+  const levelScale = 1 + Math.max(0, subLevel) * 0.042;
+  return baseR * levelScale * sizeMult;
+}
+
+function getActiveEventType() {
+  if (!eventState || !eventState.active) return null;
+  if (Date.now() > eventState.endsAt) return null;
+  return eventState.type;
+}
+
+function getKingDomainEffects() {
+  if (!myFish) return { suppressed: false, suppressedCount: 0 };
+  let suppressed = false;
+  let suppressedCount = 0;
+
+  // Kiểm tra mình có đang bị Cá Của Vua khác áp chế không
+  Object.values(remotePlayers).forEach(p => {
+    if (p.ultActive && p.species === "kingfish") {
+      if (Math.hypot(p.x - myFish.x, p.y - myFish.y) <= DOMAIN_RADIUS) {
+        suppressed = true;
+      }
+    }
+  });
+
+  // Nếu mình là Cá Của Vua đang bật Áp Chế Tuyệt Đối, đếm số cá địch trong lĩnh vực
+  if (myFish.ultTimer > 0 && myFish.species === "kingfish") {
+    aiFishes.forEach(ai => {
+      if (Math.hypot(ai.x - myFish.x, ai.y - myFish.y) <= DOMAIN_RADIUS) suppressedCount++;
+    });
+    Object.values(remotePlayers).forEach(p => {
+      if (Math.hypot(p.x - myFish.x, p.y - myFish.y) <= DOMAIN_RADIUS) suppressedCount++;
+    });
+    Object.values(bossesState).forEach(b => {
+      if (b && b.alive && Math.hypot(b.x - myFish.x, b.y - myFish.y) <= DOMAIN_RADIUS) suppressedCount++;
+    });
+  }
+
+  return { suppressed, suppressedCount };
+}
+
+function getEffectiveStats() {
+  if (!myFish) return null;
+  const ev = getActiveEventType();
+  const domain = getKingDomainEffects();
+
+  let speedMult = 1;
+  let dmgMult = 1;
+  let maxHpMult = 1;
+  let biteRangeMult = 1;
+  let expMult = 1;
+  let dmgTakenMult = myFish.dmgTakenMult;
+
+  // Ảnh hưởng Sự kiện
+  if (ev === "blessing") expMult *= 2.0;
+  if (ev === "migration") speedMult *= 1.5;
+  if (ev === "predator") dmgMult *= 1.3;
+  if (ev === "weakness") {
+    speedMult *= 0.8;
+    dmgMult *= 0.8;
+    maxHpMult *= 0.8;
+  }
+
+  // Ảnh hưởng Lĩnh vực Áp Chế Tuyệt Đối
+  if (domain.suppressed) {
+    speedMult *= 0.6;
+    dmgMult *= 0.6;
+    maxHpMult *= 0.6;
+  }
+  if (domain.suppressedCount > 0) {
+    const bonus = 1 + domain.suppressedCount * 0.10;
+    speedMult *= bonus;
+    dmgMult *= bonus;
+    maxHpMult *= bonus;
+  }
+
+  // Ảnh hưởng Skill Đặc Biệt (10 giây + miễn thương 50%)
+  if (myFish.ultTimer > 0) {
+    dmgTakenMult *= 0.5; // Miễn thương 50%
+    if (myFish.species === "swordfish") {
+      biteRangeMult *= 1.5;
+      dmgMult *= 1.5;
+    } else if (myFish.species === "turtle") {
+      dmgTakenMult = 0; // Sát thương nhận vào bằng 0
+    } else if (myFish.species === "butterfish") {
+      speedMult *= 2.0; // Tốc độ tăng 100%
+    }
+  }
+
+  return {
+    speed: myFish.baseSpeed * speedMult,
+    dmg: myFish.baseDmg * dmgMult,
+    maxHp: Math.round(myFish.baseMaxHp * maxHpMult),
+    biteRangeMult,
+    expMult,
+    dmgTakenMult,
+    suppressed: domain.suppressed
+  };
+}
+
+// ==================== BẮT ĐẦU TRẬN ĐẤU ====================
 document.getElementById("btn-play").addEventListener("click", startMatch);
 
 async function startMatch() {
@@ -549,14 +682,15 @@ async function startMatch() {
     x: 400 + Math.random() * (MAP_SIZE - 800),
     y: 400 + Math.random() * (MAP_SIZE - 800),
     angle: 0,
+    level: 1,
     tier: 1,
     exp: 0,
-    expNeed: EVO_TIERS[0].expNeed,
+    expNeed: 45,
     score: 0,
     hp: baseHp,
-    maxHp: baseHp,
-    speed: baseSpeed,
-    dmg: baseDmg,
+    baseMaxHp: baseHp,
+    baseSpeed,
+    baseDmg,
     dmgTakenMult: fishCfg.dmgTakenMult,
     healOnFood: fishCfg.healOnFood,
     healOnKill: fishCfg.healOnKill,
@@ -565,6 +699,8 @@ async function startMatch() {
     skillDmgMult: 1,
     skillCdMult: 1,
     skillTimer: 0,
+    ultTimer: 0,
+    ultCdTimer: 0,
     shieldTimer: 3.0,
     dashTimer: 0,
     reflectTimer: 0,
@@ -574,7 +710,7 @@ async function startMatch() {
     joinedAt: Date.now()
   };
 
-  sessionStats = { foodEaten: 0, fishKilled: 0, bossKilled: 0, reachedTier3: 0, coinsEarned: 0 };
+  sessionStats = { foodEaten: 0, fishKilled: 0, bossKilled: 0, reachedTier2: 0, coinsEarned: 0 };
   pendingLevelUps = 0;
   choosingBuff = false;
   biteHold = false;
@@ -582,8 +718,10 @@ async function startMatch() {
   floatingTexts = [];
   projectiles = [];
   biteEffects = [];
+  reflectEffects = [];
+  afterimages = [];
 
-  foods = Array.from({ length: 240 }, () => spawnFood());
+  foods = Array.from({ length: BASE_FOOD_COUNT }, () => spawnFood());
   aiFishes = Array.from({ length: 16 }, (_, i) => spawnAiFish(i));
   bubbles = Array.from({ length: 60 }, () => ({
     x: Math.random() * MAP_SIZE,
@@ -602,7 +740,7 @@ async function startMatch() {
   refreshMobileControlsVisibility();
   inGame = true;
 
-  connectRealtimeRoom();
+  await connectRealtimeRoom();
   lastTime = performance.now();
   animFrameId = requestAnimationFrame(gameLoop);
 }
@@ -621,29 +759,85 @@ function spawnFood(x, y, val = 14) {
 function spawnAiFish(idx) {
   const keys = ["swordfish", "turtle", "butterfish"];
   const sp = keys[idx % keys.length];
-  const tier = Math.min(4, 1 + Math.floor(Math.random() * 3));
-  const maxHp = 80 + tier * 70;
+  const level = 1 + Math.floor(Math.random() * 14);
+  const tier = getTierFromLevel(level);
+  const maxHp = 75 + level * 18;
   return {
     id: "ai_" + idx + "_" + Math.random().toString(36).slice(2, 6),
     name: ["Cá Hổ", "Cá Đuối", "Kình Ngư", "Hải Ngư", "Cá Mập Nhỏ"][idx % 5],
     species: sp,
+    level,
     tier,
     x: Math.random() * MAP_SIZE,
     y: Math.random() * MAP_SIZE,
     angle: Math.random() * Math.PI * 2,
     hp: maxHp,
     maxHp,
-    dmg: 12 + tier * 8,
-    speed: 140 + Math.random() * 40,
+    dmg: 10 + level * 3,
+    speed: 135 + Math.random() * 40,
     biteCooldown: 0,
     aiTimer: 0
   };
 }
 
-// ==================== FIREBASE REALTIME MULTIPLAYER ====================
+// ==================== FIREBASE REALTIME & RESET MAP ====================
 let unsubListeners = [];
 
-function connectRealtimeRoom() {
+async function resetWorldMapInFirebase() {
+  const bossTier = 2;
+  const maxHp = 600 + bossTier * 450;
+  const bossesInit = {};
+  BOSS_SPAWNS.forEach((sp, idx) => {
+    bossesInit[sp.id] = {
+      id: sp.id,
+      name: sp.name,
+      alive: true,
+      tier: bossTier,
+      level: 10,
+      x: sp.x,
+      y: sp.y,
+      homeX: sp.x,
+      homeY: sp.y,
+      angle: idx * 2,
+      hp: maxHp,
+      maxHp,
+      dmg: 28 + bossTier * 12,
+      respawnAt: 0,
+      lastHitBy: ""
+    };
+  });
+
+  const now = Date.now();
+  await set(ref(db, "rooms/main/bosses"), bossesInit);
+  await set(ref(db, "rooms/main/event"), {
+    active: false,
+    type: "",
+    startedAt: 0,
+    endsAt: 0,
+    nextEventAt: now + 60000 // Sự kiện đầu tiên sau 1 phút, sau đó mỗi 2 phút
+  });
+  await remove(ref(db, "rooms/main/hits"));
+}
+
+async function connectRealtimeRoom() {
+  // Kiểm tra xem map có đang trống không để reset map về ban đầu
+  const playersSnap = await get(ref(db, "rooms/main/players"));
+  const existing = playersSnap.val() || {};
+  const now = Date.now();
+  let activeOthers = 0;
+  for (const [uid, p] of Object.entries(existing)) {
+    if (uid !== currentUser.uid) {
+      if (p.updatedAt && now - p.updatedAt < 15000) {
+        activeOthers++;
+      } else {
+        remove(ref(db, `rooms/main/players/${uid}`));
+      }
+    }
+  }
+  if (activeOthers === 0) {
+    await resetWorldMapInFirebase();
+  }
+
   const myRef = ref(db, `rooms/main/players/${currentUser.uid}`);
   onDisconnect(myRef).remove();
 
@@ -660,28 +854,59 @@ function connectRealtimeRoom() {
     if (!inGame || !myFish) return;
     const hit = snap.val();
     remove(snap.ref);
+
+    if (hit.isReflectFx) {
+      reflectEffects.push({ x: myFish.x, y: myFish.y, life: 0.35, maxLife: 0.35 });
+    }
     if (myFish.shieldTimer > 0) return;
-    const actualDmg = Math.max(1, Math.round(hit.dmg * myFish.dmgTakenMult));
+
+    // Cá Chim (Tốc Độ Ánh Sáng): 50% tỉ lệ né sát thương
+    if (myFish.ultTimer > 0 && myFish.species === "butterfish" && Math.random() < 0.5) {
+      addFloatingText(myFish.x, myFish.y - 34, "💨 Hụt!", "#74c0fc", 1.15);
+      return;
+    }
+
+    // Rùa Biển (Phòng Ngự Tuyệt Đối): ST = 0, Phản 100% ST
+    if (myFish.ultTimer > 0 && myFish.species === "turtle") {
+      addFloatingText(myFish.x, myFish.y - 34, "🛡️ PHẢN ĐÒN!", "#ffd43b", 1.1);
+      if (hit.fromUid && !hit.isReflectFx) {
+        sendPvpHit(hit.fromUid, hit.dmg, false, true);
+        const attacker = remotePlayers[hit.fromUid];
+        if (attacker) {
+          reflectEffects.push({ x: attacker.x, y: attacker.y, life: 0.35, maxLife: 0.35 });
+        }
+      }
+      return;
+    }
+
+    const eff = getEffectiveStats();
+    const actualDmg = Math.max(1, Math.round(hit.dmg * eff.dmgTakenMult));
     myFish.hp -= actualDmg;
     addFloatingText(myFish.x, myFish.y - 30, hit.crit ? `💥 -${actualDmg}` : `-${actualDmg}`, "#ff4d4d", hit.crit ? 1.3 : 1);
-    if (myFish.reflectTimer > 0 && hit.fromUid) {
-      sendPvpHit(hit.fromUid, actualDmg * 0.6, false);
+    if (myFish.reflectTimer > 0 && hit.fromUid && !hit.isReflectFx) {
+      sendPvpHit(hit.fromUid, actualDmg * 0.6, false, true);
     }
     if (myFish.hp <= 0) {
-      handleDeath(`Bị ${hit.fromName || "người chơi khác"} nuốt chửng!`);
+      handleDeath(`Bị ${hit.fromName || "người chơi khác"} hạ gục!`);
     }
   }));
 
-  const bossRef = ref(db, "rooms/main/boss");
-  unsubListeners.push(onValue(bossRef, (snap) => {
-    bossState = snap.val();
-    if (!bossState && isRoomHost()) {
-      spawnBossInFirebase();
+  // Lắng nghe 3 Con Boss
+  unsubListeners.push(onValue(ref(db, "rooms/main/bosses"), (snap) => {
+    bossesState = snap.val() || {};
+    if (Object.keys(bossesState).length === 0 && isRoomHost()) {
+      resetWorldMapInFirebase();
     }
+  }));
+
+  // Lắng nghe Sự kiện
+  unsubListeners.push(onValue(ref(db, "rooms/main/event"), (snap) => {
+    eventState = snap.val();
   }));
 
   syncIntervalId = setInterval(() => {
     if (!inGame || !myFish) return;
+    const eff = getEffectiveStats();
     set(myRef, {
       uid: myFish.uid,
       name: myFish.name,
@@ -689,19 +914,21 @@ function connectRealtimeRoom() {
       x: Math.round(myFish.x),
       y: Math.round(myFish.y),
       angle: Number(myFish.angle.toFixed(2)),
+      level: myFish.level,
       tier: myFish.tier,
       score: myFish.score,
       hp: Math.round(myFish.hp),
-      maxHp: Math.round(myFish.maxHp),
+      maxHp: eff.maxHp,
       sizeMult: myFish.sizeMult,
       shield: myFish.shieldTimer > 0,
       chomping: myFish.chompTimer > 0,
+      ultActive: myFish.ultTimer > 0,
       joinedAt: myFish.joinedAt,
       updatedAt: Date.now()
     });
 
     if (isRoomHost()) {
-      hostUpdateBoss();
+      hostUpdateWorld();
     }
   }, 66);
 }
@@ -717,65 +944,99 @@ function isRoomHost() {
 function getHighestPlayerTier() {
   let maxT = myFish ? myFish.tier : 1;
   Object.values(remotePlayers).forEach(p => {
-    if (p.tier > maxT) maxT = p.tier;
+    if ((p.tier || 1) > maxT) maxT = p.tier;
   });
   return maxT;
 }
 
-function spawnBossInFirebase() {
-  const bossTier = getHighestPlayerTier() + 1;
-  const maxHp = 600 + bossTier * 450;
-  set(ref(db, "rooms/main/boss"), {
-    alive: true,
-    tier: bossTier,
-    x: MAP_SIZE / 2,
-    y: MAP_SIZE / 2,
-    angle: 0,
-    hp: maxHp,
-    maxHp,
-    dmg: 28 + bossTier * 12,
-    respawnAt: 0,
-    lastHitBy: ""
-  });
-}
-
-function hostUpdateBoss() {
-  if (!bossState) return;
+function hostUpdateWorld() {
   const now = Date.now();
-  if (!bossState.alive) {
-    if (bossState.respawnAt && now >= bossState.respawnAt) {
-      spawnBossInFirebase();
-    }
-    return;
-  }
-  const players = [myFish, ...Object.values(remotePlayers)].filter(Boolean);
-  let target = null, minDist = 650;
-  players.forEach(p => {
-    const d = Math.hypot(p.x - bossState.x, p.y - bossState.y);
-    if (d < minDist) { minDist = d; target = p; }
-  });
-  let angle = bossState.angle || 0;
-  if (target) {
-    angle = Math.atan2(target.y - bossState.y, target.x - bossState.x);
-  } else if (Math.random() < 0.08) {
-    angle += (Math.random() - 0.5) * 1.2;
-  }
-  const speed = 13;
-  const nx = Math.max(150, Math.min(MAP_SIZE - 150, bossState.x + Math.cos(angle) * speed));
-  const ny = Math.max(150, Math.min(MAP_SIZE - 150, bossState.y + Math.sin(angle) * speed));
 
-  const desiredTier = getHighestPlayerTier() + 1;
-  update(ref(db, "rooms/main/boss"), {
-    x: Math.round(nx),
-    y: Math.round(ny),
-    angle: Number(angle.toFixed(2)),
-    tier: Math.max(bossState.tier, desiredTier)
+  // 1. Cập nhật 3 Con Boss
+  BOSS_SPAWNS.forEach((sp) => {
+    const b = bossesState[sp.id];
+    if (!b) return;
+    const desiredTier = Math.min(6, getHighestPlayerTier() + 1);
+
+    if (!b.alive) {
+      if (b.respawnAt && now >= b.respawnAt) {
+        const maxHp = 600 + desiredTier * 450;
+        set(ref(db, `rooms/main/bosses/${sp.id}`), {
+          id: sp.id,
+          name: sp.name,
+          alive: true,
+          tier: desiredTier,
+          level: desiredTier * 10,
+          x: sp.x,
+          y: sp.y,
+          homeX: sp.x,
+          homeY: sp.y,
+          angle: Math.random() * Math.PI * 2,
+          hp: maxHp,
+          maxHp,
+          dmg: 28 + desiredTier * 12,
+          respawnAt: 0,
+          lastHitBy: ""
+        });
+      }
+      return;
+    }
+
+    const players = [myFish, ...Object.values(remotePlayers)].filter(Boolean);
+    let target = null, minDist = 600;
+    players.forEach(p => {
+      const d = Math.hypot(p.x - b.x, p.y - b.y);
+      if (d < minDist) { minDist = d; target = p; }
+    });
+
+    let angle = b.angle || 0;
+    if (target) {
+      angle = Math.atan2(target.y - b.y, target.x - b.x);
+    } else if (Math.hypot(b.x - sp.x, b.y - sp.y) > 550) {
+      angle = Math.atan2(sp.y - b.y, sp.x - b.x);
+    } else if (Math.random() < 0.08) {
+      angle += (Math.random() - 0.5) * 1.2;
+    }
+
+    const speed = 13;
+    const nx = Math.max(150, Math.min(MAP_SIZE - 150, b.x + Math.cos(angle) * speed));
+    const ny = Math.max(150, Math.min(MAP_SIZE - 150, b.y + Math.sin(angle) * speed));
+
+    update(ref(db, `rooms/main/bosses/${sp.id}`), {
+      x: Math.round(nx),
+      y: Math.round(ny),
+      angle: Number(angle.toFixed(2)),
+      tier: Math.max(b.tier, desiredTier)
+    });
   });
+
+  // 2. Cập nhật Sự kiện mỗi 2 phút (kéo dài 30 giây)
+  if (eventState) {
+    if (eventState.active && now >= eventState.endsAt) {
+      set(ref(db, "rooms/main/event"), {
+        active: false,
+        type: "",
+        startedAt: 0,
+        endsAt: 0,
+        nextEventAt: eventState.startedAt + EVENT_INTERVAL_MS
+      });
+    } else if (!eventState.active && eventState.nextEventAt && now >= eventState.nextEventAt) {
+      const chosen = EVENTS_POOL[Math.floor(Math.random() * EVENTS_POOL.length)];
+      set(ref(db, "rooms/main/event"), {
+        active: true,
+        type: chosen.id,
+        startedAt: now,
+        endsAt: now + EVENT_DURATION_MS,
+        nextEventAt: now + EVENT_INTERVAL_MS
+      });
+    }
+  }
 }
 
-function damageBoss(dmg) {
-  if (!bossState || !bossState.alive) return;
-  const bossRef = ref(db, "rooms/main/boss");
+function damageBoss(bossId, dmg) {
+  const b = bossesState[bossId];
+  if (!b || !b.alive) return;
+  const bossRef = ref(db, `rooms/main/bosses/${bossId}`);
   runTransaction(bossRef, (curr) => {
     if (!curr || !curr.alive) return curr;
     curr.hp -= Math.round(dmg);
@@ -792,27 +1053,36 @@ function damageBoss(dmg) {
       sessionStats.bossKilled += 1;
       sessionStats.coinsEarned += 80;
       gainExp(350);
-      addToast("🏆 BẠN ĐÃ HẠ GỤC BOSS THỦY CUNG! (+80 Coin, +350 EXP)");
+      addToast(`🏆 HẠ GỤC ${val.name.toUpperCase()}! (+80 Coin, +350 EXP)`);
     }
   });
 }
 
-function sendPvpHit(targetUid, dmg, isCrit = false) {
+function sendPvpHit(targetUid, dmg, isCrit = false, isReflectFx = false) {
   const hitId = currentUser.uid + "_" + Date.now() + "_" + Math.floor(Math.random() * 999);
   set(ref(db, `rooms/main/hits/${targetUid}/${hitId}`), {
     fromUid: currentUser.uid,
     fromName: myFish.name,
     dmg: Math.round(dmg),
-    crit: isCrit
+    crit: isCrit,
+    isReflectFx
   });
 }
 
-function disconnectRealtimeRoom() {
+async function disconnectRealtimeRoom() {
   if (syncIntervalId) clearInterval(syncIntervalId);
   unsubListeners.forEach(u => u());
   unsubListeners = [];
   if (currentUser) {
-    remove(ref(db, `rooms/main/players/${currentUser.uid}`));
+    await remove(ref(db, `rooms/main/players/${currentUser.uid}`));
+    // Nếu không còn người chơi nào online trong map -> reset toàn bộ map về ban đầu
+    const snap = await get(ref(db, "rooms/main/players"));
+    const rem = snap.val() || {};
+    const now = Date.now();
+    const anyOnline = Object.values(rem).some(p => p.updatedAt && now - p.updatedAt < 15000);
+    if (!anyOnline) {
+      await remove(ref(db, "rooms/main"));
+    }
   }
 }
 
@@ -842,7 +1112,6 @@ canvas.addEventListener("contextmenu", (e) => {
 });
 
 window.addEventListener("keydown", (e) => {
-  // Không kích hoạt phím tắt game khi đang gõ tên hoặc gõ Chat
   if (document.activeElement && ["INPUT", "TEXTAREA"].includes(document.activeElement.tagName)) {
     return;
   }
@@ -850,6 +1119,10 @@ window.addEventListener("keydown", (e) => {
   if (e.code === "Space") {
     e.preventDefault();
     triggerSkill();
+  }
+  if (e.code === "KeyE" || e.code === "KeyR") {
+    e.preventDefault();
+    triggerUltimateSkill();
   }
   if (choosingBuff && ["Digit1", "Digit2", "Digit3"].includes(e.code)) {
     const idx = Number(e.code.replace("Digit", "")) - 1;
@@ -865,7 +1138,7 @@ window.addEventListener("touchstart", (e) => {
   if (inGame) refreshMobileControlsVisibility();
 }, { passive: true });
 
-// ---- CẦN GẠT JOYSTICK ĐA ĐIỂM ----
+// ---- JOYSTICK ----
 const joystickZone = document.getElementById("joystick-zone");
 const joystickBase = document.getElementById("joystick-base");
 const joystickKnob = document.getElementById("joystick-knob");
@@ -889,13 +1162,9 @@ function updateJoystickFromTouch(touch) {
   const clamped = Math.min(maxDist, dist);
   const angle = Math.atan2(dy, dx);
 
-  if (dist > 4) {
-    joystick.angle = angle;
-  }
+  if (dist > 4) joystick.angle = angle;
   joystick.power = clamped / maxDist;
-  const kx = Math.cos(angle) * clamped;
-  const ky = Math.sin(angle) * clamped;
-  joystickKnob.style.transform = `translate(${kx}px, ${ky}px)`;
+  joystickKnob.style.transform = `translate(${Math.cos(angle) * clamped}px, ${Math.sin(angle) * clamped}px)`;
 }
 
 joystickZone.addEventListener("touchstart", (e) => {
@@ -932,8 +1201,10 @@ function endJoystickTouch(e) {
 joystickZone.addEventListener("touchend", endJoystickTouch);
 joystickZone.addEventListener("touchcancel", endJoystickTouch);
 
+// ---- NÚT CẮN, SKILL CƠ BẢN & SKILL ĐẶC BIỆT TRÊN MOBILE ----
 const btnMobileBite = document.getElementById("btn-mobile-bite");
 const btnMobileSkill = document.getElementById("btn-mobile-skill");
+const btnMobileUlt = document.getElementById("btn-mobile-ult");
 
 btnMobileBite.addEventListener("touchstart", (e) => {
   e.preventDefault();
@@ -957,7 +1228,18 @@ btnMobileSkill.addEventListener("touchstart", (e) => {
   triggerSkill();
 }, { passive: false });
 
-// ==================== HÀM CẮN & ĐÁNH GIÁ ĐIỂM YẾU ĐUÔI ====================
+btnMobileUlt.addEventListener("touchstart", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  inputMode = "touch";
+  triggerUltimateSkill();
+}, { passive: false });
+
+// Cho phép click vào ô Skill trên PC cũng dùng được
+document.getElementById("hud-skill-box").addEventListener("click", triggerSkill);
+document.getElementById("hud-ult-box").addEventListener("click", triggerUltimateSkill);
+
+// ==================== CẮN & SKILL CƠ BẢN / SKILL ĐẶC BIỆT ====================
 function evaluateBiteHit(biteX, biteY, biteRadius, targetX, targetY, targetAngle, targetRadius) {
   const dCenter = Math.hypot(targetX - biteX, targetY - biteY);
   const tailX = targetX - Math.cos(targetAngle) * targetRadius * 0.95;
@@ -978,14 +1260,17 @@ function evaluateBiteHit(biteX, biteY, biteRadius, targetX, targetY, targetAngle
 function performBite() {
   if (!inGame || !myFish || choosingBuff || myFish.biteCooldown > 0) return;
 
+  const eff = getEffectiveStats();
   myFish.biteCooldown = 0.38;
   myFish.chompTimer = 0.22;
-  const myRadius = getFishRadius(myFish.tier, myFish.sizeMult);
+  const myRadius = getFishRadius(myFish.level, myFish.tier, myFish.sizeMult);
 
-  const biteDist = myRadius * 0.95;
-  const biteRadius = myRadius * 0.88;
+  const biteDist = myRadius * 0.95 * eff.biteRangeMult;
+  const biteRadius = myRadius * 0.88 * eff.biteRangeMult;
   const biteX = myFish.x + Math.cos(myFish.angle) * biteDist;
   const biteY = myFish.y + Math.sin(myFish.angle) * biteDist;
+
+  const isSwordUlt = myFish.ultTimer > 0 && myFish.species === "swordfish";
 
   biteEffects.push({
     x: biteX,
@@ -994,25 +1279,28 @@ function performBite() {
     radius: biteRadius,
     life: 0.24,
     maxLife: 0.24,
-    critSpark: false
+    critSpark: false,
+    swordSlash: isSwordUlt
   });
 
+  // 1. Cắn AI Cá
   for (let i = aiFishes.length - 1; i >= 0; i--) {
     const ai = aiFishes[i];
-    const aiR = getFishRadius(ai.tier, 1);
+    const aiR = getFishRadius(ai.level, ai.tier, 1);
     const res = evaluateBiteHit(biteX, biteY, biteRadius, ai.x, ai.y, ai.angle, aiR);
     if (res.hit) {
-      const dmg = res.isCrit ? myFish.dmg * 2.0 : myFish.dmg;
+      const dmg = res.isCrit ? eff.dmg * 2.0 : eff.dmg;
       damageAiFish(ai, dmg, res.isCrit, res.tailX, res.tailY);
     }
   }
 
+  // 2. Cắn Người chơi khác
   Object.values(remotePlayers).forEach(p => {
-    const pR = getFishRadius(p.tier || 1, p.sizeMult || 1);
+    const pR = getFishRadius(p.level || 1, p.tier || 1, p.sizeMult || 1);
     const res = evaluateBiteHit(biteX, biteY, biteRadius, p.x, p.y, p.angle || 0, pR);
     if (res.hit) {
-      const dmg = res.isCrit ? myFish.dmg * 2.0 : myFish.dmg;
-      sendPvpHit(p.uid, dmg, res.isCrit);
+      const dmg = res.isCrit ? eff.dmg * 2.0 : eff.dmg;
+      sendPvpHit(p.uid, dmg, res.isCrit, false);
       if (res.isCrit) {
         addFloatingText(res.tailX, res.tailY - 24, `💥 CHÍ MẠNG -${Math.round(dmg)}`, "#ff922b", 1.25);
         spawnCritBurst(res.tailX, res.tailY);
@@ -1023,9 +1311,9 @@ function performBite() {
       if ((p.hp || 100) <= dmg) {
         sessionStats.fishKilled += 1;
         sessionStats.coinsEarned += 15;
-        gainExp(90 + (p.tier || 1) * 40);
-        if (myFish.healOnKill > 0 && myFish.hp < myFish.maxHp) {
-          const healed = Math.min(myFish.healOnKill, myFish.maxHp - myFish.hp);
+        gainExp(90 + (p.level || 1) * 12);
+        if (myFish.healOnKill > 0 && myFish.hp < eff.maxHp) {
+          const healed = Math.min(myFish.healOnKill, eff.maxHp - myFish.hp);
           myFish.hp += healed;
           addFloatingText(myFish.x, myFish.y - 25, `+${Math.round(healed)} HP`, "#51cf66", 1);
         }
@@ -1034,20 +1322,22 @@ function performBite() {
     }
   });
 
-  if (bossState && bossState.alive) {
-    const bossR = getFishRadius(bossState.tier, 1.35);
-    const res = evaluateBiteHit(biteX, biteY, biteRadius, bossState.x, bossState.y, bossState.angle || 0, bossR);
+  // 3. Cắn 3 Con Boss
+  Object.values(bossesState).forEach(b => {
+    if (!b || !b.alive) return;
+    const bossR = getFishRadius(b.level || 10, b.tier || 2, 1.35);
+    const res = evaluateBiteHit(biteX, biteY, biteRadius, b.x, b.y, b.angle || 0, bossR);
     if (res.hit) {
-      const dmg = res.isCrit ? myFish.dmg * 2.0 : myFish.dmg;
-      damageBoss(dmg);
+      const dmg = res.isCrit ? eff.dmg * 2.0 : eff.dmg;
+      damageBoss(b.id, dmg);
       if (res.isCrit) {
         addFloatingText(res.tailX, res.tailY - 35, `💥 CHÍ MẠNG -${Math.round(dmg)}`, "#ff922b", 1.35);
         spawnCritBurst(res.tailX, res.tailY);
       } else {
-        addFloatingText(bossState.x, bossState.y - 60, `-${Math.round(dmg)}`, "#ffd43b", 1);
+        addFloatingText(b.x, b.y - 60, `-${Math.round(dmg)}`, "#ffd43b", 1);
       }
     }
-  }
+  });
 }
 
 function spawnCritBurst(x, y) {
@@ -1059,8 +1349,9 @@ function spawnCritBurst(x, y) {
 function triggerSkill() {
   if (!myFish || myFish.skillTimer > 0 || choosingBuff) return;
   const cfg = FISH_TYPES[myFish.species];
+  const eff = getEffectiveStats();
   myFish.skillTimer = cfg.skillCd * myFish.skillCdMult;
-  const sDmg = myFish.dmg * 1.8 * myFish.skillDmgMult;
+  const sDmg = eff.dmg * 1.8 * myFish.skillDmgMult;
 
   if (myFish.species === "swordfish") {
     myFish.dashTimer = 0.45;
@@ -1084,6 +1375,16 @@ function triggerSkill() {
   }
 }
 
+function triggerUltimateSkill() {
+  if (!myFish || myFish.ultCdTimer > 0 || choosingBuff) return;
+  const cfg = FISH_TYPES[myFish.species];
+  // Hồi chiêu gấp 3 lần skill cơ bản
+  myFish.ultCdTimer = cfg.skillCd * 3 * myFish.skillCdMult;
+  myFish.ultTimer = 10.0; // Hiệu lực trong 10 giây
+  addToast(`🔥 KÍCH HOẠT: ${cfg.ultName.toUpperCase()}! (10s)`);
+  addFloatingText(myFish.x, myFish.y - 48, `⚡ ${cfg.ultName.toUpperCase()}!`, "#fde047", 1.25);
+}
+
 function dealAoEDamage(cx, cy, radius, dmg) {
   aiFishes.forEach(ai => {
     if (Math.hypot(ai.x - cx, ai.y - cy) < radius) {
@@ -1092,13 +1393,15 @@ function dealAoEDamage(cx, cy, radius, dmg) {
   });
   Object.values(remotePlayers).forEach(p => {
     if (Math.hypot(p.x - cx, p.y - cy) < radius) {
-      sendPvpHit(p.uid, dmg, false);
+      sendPvpHit(p.uid, dmg, false, false);
     }
   });
-  if (bossState && bossState.alive && Math.hypot(bossState.x - cx, bossState.y - cy) < radius + 70) {
-    damageBoss(dmg);
-    addFloatingText(bossState.x, bossState.y - 50, `-${Math.round(dmg)}`, "#ffd43b");
-  }
+  Object.values(bossesState).forEach(b => {
+    if (b && b.alive && Math.hypot(b.x - cx, b.y - cy) < radius + 70) {
+      damageBoss(b.id, dmg);
+      addFloatingText(b.x, b.y - 50, `-${Math.round(dmg)}`, "#ffd43b");
+    }
+  });
 }
 
 // ==================== GAME LOOP ====================
@@ -1121,11 +1424,21 @@ function updateGame(dt) {
   if (!myFish) return;
 
   if (myFish.skillTimer > 0) myFish.skillTimer = Math.max(0, myFish.skillTimer - dt);
+  if (myFish.ultTimer > 0) myFish.ultTimer = Math.max(0, myFish.ultTimer - dt);
+  if (myFish.ultCdTimer > 0) myFish.ultCdTimer = Math.max(0, myFish.ultCdTimer - dt);
   if (myFish.shieldTimer > 0) myFish.shieldTimer = Math.max(0, myFish.shieldTimer - dt);
   if (myFish.dashTimer > 0) myFish.dashTimer = Math.max(0, myFish.dashTimer - dt);
   if (myFish.reflectTimer > 0) myFish.reflectTimer = Math.max(0, myFish.reflectTimer - dt);
   if (myFish.biteCooldown > 0) myFish.biteCooldown = Math.max(0, myFish.biteCooldown - dt);
   if (myFish.chompTimer > 0) myFish.chompTimer = Math.max(0, myFish.chompTimer - dt);
+
+  const eff = getEffectiveStats();
+  if (myFish.hp > eff.maxHp) myFish.hp = eff.maxHp;
+
+  // Điều chỉnh số lượng mồi theo Sự Kiện "Đại tiệc của vua cá" (+50%)
+  const desiredFoodCount = getActiveEventType() === "feast" ? Math.round(BASE_FOOD_COUNT * 1.5) : BASE_FOOD_COUNT;
+  while (foods.length < desiredFoodCount) foods.push(spawnFood());
+  if (foods.length > desiredFoodCount + 25) foods.length = desiredFoodCount;
 
   if (biteHold && myFish.biteCooldown <= 0) {
     performBite();
@@ -1147,15 +1460,29 @@ function updateGame(dt) {
     moveFactor = Math.min(1, distToCursor / 60);
   }
 
-  const curSpeed = myFish.speed * (myFish.dashTimer > 0 ? 2.15 : 1.0);
+  const curSpeed = eff.speed * (myFish.dashTimer > 0 ? 2.15 : 1.0);
   myFish.x = Math.max(40, Math.min(MAP_SIZE - 40, myFish.x + Math.cos(myFish.angle) * curSpeed * moveFactor * dt));
   myFish.y = Math.max(40, Math.min(MAP_SIZE - 40, myFish.y + Math.sin(myFish.angle) * curSpeed * moveFactor * dt));
+
+  // Cá Chim (Tốc Độ Ánh Sáng): để lại lưu ảnh phân thân mờ dần khi bơi
+  if (myFish.ultTimer > 0 && myFish.species === "butterfish" && moveFactor > 0.15) {
+    afterimageSpawnTimer -= dt;
+    if (afterimageSpawnTimer <= 0) {
+      afterimageSpawnTimer = 0.045;
+      afterimages.push({
+        x: myFish.x, y: myFish.y, angle: myFish.angle,
+        level: myFish.level, tier: myFish.tier, sizeMult: myFish.sizeMult,
+        species: myFish.species, life: 0.28, maxLife: 0.28
+      });
+    }
+  }
 
   camera.x += (myFish.x - camera.x) * 0.14;
   camera.y += (myFish.y - camera.y) * 0.14;
 
-  const myRadius = getFishRadius(myFish.tier, myFish.sizeMult);
+  const myRadius = getFishRadius(myFish.level, myFish.tier, myFish.sizeMult);
 
+  // Ăn mồi
   const eatRadius = (myRadius + 24) * myFish.eatRangeBonus;
   for (let i = foods.length - 1; i >= 0; i--) {
     const f = foods[i];
@@ -1167,13 +1494,13 @@ function updateGame(dt) {
       } else {
         gainExp(f.val);
         sessionStats.foodEaten += 1;
-        if (myFish.healOnFood > 0 && myFish.hp < myFish.maxHp) {
-          const healed = Math.min(myFish.healOnFood, myFish.maxHp - myFish.hp);
+        if (myFish.healOnFood > 0 && myFish.hp < eff.maxHp) {
+          const healed = Math.min(myFish.healOnFood, eff.maxHp - myFish.hp);
           myFish.hp += healed;
           addFloatingText(myFish.x, myFish.y - 25, `+${Math.round(healed)} HP`, "#51cf66", 0.85);
         }
         foods.splice(i, 1);
-        foods.push(spawnFood());
+        if (foods.length < desiredFoodCount) foods.push(spawnFood());
       }
     }
   }
@@ -1185,17 +1512,25 @@ function updateGame(dt) {
     pr.life -= dt;
     let hit = false;
     aiFishes.forEach(ai => {
-      if (!hit && Math.hypot(ai.x - pr.x, ai.y - pr.y) < getFishRadius(ai.tier, 1) + 14) {
+      if (!hit && Math.hypot(ai.x - pr.x, ai.y - pr.y) < getFishRadius(ai.level, ai.tier, 1) + 14) {
         damageAiFish(ai, pr.dmg, false, ai.x, ai.y);
         hit = true;
       }
     });
-    if (!hit && bossState && bossState.alive && Math.hypot(bossState.x - pr.x, bossState.y - pr.y) < 90) {
-      damageBoss(pr.dmg);
-      hit = true;
+    if (!hit) {
+      for (const b of Object.values(bossesState)) {
+        if (b && b.alive && Math.hypot(b.x - pr.x, b.y - pr.y) < 90) {
+          damageBoss(b.id, pr.dmg);
+          hit = true;
+          break;
+        }
+      }
     }
     if (hit || pr.life <= 0) projectiles.splice(i, 1);
   }
+
+  // AI Cá & Kiểm tra Áp Chế Huyết Mạch của Cá Vua
+  const kingInUlt = myFish.ultTimer > 0 && myFish.species === "kingfish";
 
   aiFishes.forEach(ai => {
     if (ai.biteCooldown > 0) ai.biteCooldown -= dt;
@@ -1204,36 +1539,76 @@ function updateGame(dt) {
       ai.aiTimer = 1 + Math.random() * 2;
       ai.angle += (Math.random() - 0.5) * 1.8;
     }
-    ai.x = Math.max(60, Math.min(MAP_SIZE - 60, ai.x + Math.cos(ai.angle) * ai.speed * dt));
-    ai.y = Math.max(60, Math.min(MAP_SIZE - 60, ai.y + Math.sin(ai.angle) * ai.speed * dt));
 
-    const aiR = getFishRadius(ai.tier, 1);
+    const aiSuppressed = kingInUlt && Math.hypot(ai.x - myFish.x, ai.y - myFish.y) <= DOMAIN_RADIUS;
+    ai.suppressed = aiSuppressed;
+    const aiSpeed = ai.speed * (aiSuppressed ? 0.6 : 1.0);
+    ai.x = Math.max(60, Math.min(MAP_SIZE - 60, ai.x + Math.cos(ai.angle) * aiSpeed * dt));
+    ai.y = Math.max(60, Math.min(MAP_SIZE - 60, ai.y + Math.sin(ai.angle) * aiSpeed * dt));
+
+    const aiR = getFishRadius(ai.level, ai.tier, 1);
     const d = Math.hypot(ai.x - myFish.x, ai.y - myFish.y);
     if (d < myRadius + aiR && ai.biteCooldown <= 0 && myFish.shieldTimer <= 0) {
       ai.biteCooldown = 0.75;
-      const dmg = Math.max(1, Math.round(ai.dmg * myFish.dmgTakenMult));
+      const rawDmg = ai.dmg * (aiSuppressed ? 0.6 : 1.0);
+
+      if (myFish.ultTimer > 0 && myFish.species === "butterfish" && Math.random() < 0.5) {
+        addFloatingText(myFish.x, myFish.y - 34, "💨 Hụt!", "#74c0fc", 1.15);
+        return;
+      }
+      if (myFish.ultTimer > 0 && myFish.species === "turtle") {
+        reflectEffects.push({ x: ai.x, y: ai.y, life: 0.35, maxLife: 0.35 });
+        addFloatingText(myFish.x, myFish.y - 34, "🛡️ PHẢN ĐÒN!", "#ffd43b", 1.1);
+        damageAiFish(ai, rawDmg, false, ai.x, ai.y);
+        return;
+      }
+
+      const dmg = Math.max(1, Math.round(rawDmg * eff.dmgTakenMult));
       myFish.hp -= dmg;
       addFloatingText(myFish.x, myFish.y - 30, `-${dmg}`, "#ff6b6b");
       if (myFish.hp <= 0) handleDeath(`Bị ${ai.name} hạ gục!`);
     }
   });
 
-  if (bossState && bossState.alive) {
-    const bossR = getFishRadius(bossState.tier, 1.35);
-    const distBoss = Math.hypot(bossState.x - myFish.x, bossState.y - myFish.y);
+  // 3 Boss tấn công người chơi
+  Object.values(bossesState).forEach(b => {
+    if (!b || !b.alive) return;
+    const bossR = getFishRadius(b.level || 10, b.tier || 2, 1.35);
+    const distBoss = Math.hypot(b.x - myFish.x, b.y - myFish.y);
+    const bossSuppressed = kingInUlt && distBoss <= DOMAIN_RADIUS;
+
     if (distBoss < myRadius + bossR && myFish.shieldTimer <= 0 && Math.random() < dt * 1.4) {
-      const bDmg = Math.max(1, Math.round(bossState.dmg * myFish.dmgTakenMult));
+      const rawDmg = b.dmg * (bossSuppressed ? 0.6 : 1.0);
+      if (myFish.ultTimer > 0 && myFish.species === "butterfish" && Math.random() < 0.5) {
+        addFloatingText(myFish.x, myFish.y - 34, "💨 Hụt!", "#74c0fc", 1.15);
+        return;
+      }
+      if (myFish.ultTimer > 0 && myFish.species === "turtle") {
+        reflectEffects.push({ x: b.x, y: b.y, life: 0.35, maxLife: 0.35 });
+        addFloatingText(myFish.x, myFish.y - 34, "🛡️ PHẢN ĐÒN!", "#ffd43b", 1.1);
+        damageBoss(b.id, rawDmg);
+        return;
+      }
+      const bDmg = Math.max(1, Math.round(rawDmg * eff.dmgTakenMult));
       myFish.hp -= bDmg;
       addFloatingText(myFish.x, myFish.y - 30, `-${bDmg}`, "#ff3b3b");
-      if (myFish.hp <= 0) handleDeath("Bị Boss Thủy Cung nghiền nát!");
+      if (myFish.hp <= 0) handleDeath(`Bị ${b.name} nghiền nát!`);
     }
-  }
+  });
 
+  // Cập nhật các hiệu ứng tạm thời
   for (let i = biteEffects.length - 1; i >= 0; i--) {
     biteEffects[i].life -= dt;
     if (biteEffects[i].life <= 0) biteEffects.splice(i, 1);
   }
-
+  for (let i = reflectEffects.length - 1; i >= 0; i--) {
+    reflectEffects[i].life -= dt;
+    if (reflectEffects[i].life <= 0) reflectEffects.splice(i, 1);
+  }
+  for (let i = afterimages.length - 1; i >= 0; i--) {
+    afterimages[i].life -= dt;
+    if (afterimages[i].life <= 0) afterimages.splice(i, 1);
+  }
   bubbles.forEach(b => {
     b.y -= b.v * dt;
     if (b.y < 0) b.y = MAP_SIZE;
@@ -1256,9 +1631,10 @@ function damageAiFish(ai, dmg, isCrit = false, fxX = ai.x, fxY = ai.y) {
   if (ai.hp <= 0) {
     sessionStats.fishKilled += 1;
     sessionStats.coinsEarned += 5;
-    gainExp(55 + ai.tier * 25);
-    if (myFish.healOnKill > 0 && myFish.hp < myFish.maxHp) {
-      const healed = Math.min(myFish.healOnKill, myFish.maxHp - myFish.hp);
+    gainExp(55 + ai.level * 10);
+    const eff = getEffectiveStats();
+    if (myFish.healOnKill > 0 && myFish.hp < eff.maxHp) {
+      const healed = Math.min(myFish.healOnKill, eff.maxHp - myFish.hp);
       myFish.hp += healed;
       addFloatingText(myFish.x, myFish.y - 25, `+${Math.round(healed)} HP`, "#51cf66", 1);
     }
@@ -1271,23 +1647,32 @@ function damageAiFish(ai, dmg, isCrit = false, fxX = ai.x, fxY = ai.y) {
 }
 
 function gainExp(amount) {
-  myFish.exp += amount;
-  myFish.score += amount;
+  const eff = getEffectiveStats();
+  myFish.exp += amount * eff.expMult;
+  myFish.score += amount * eff.expMult;
+
   while (myFish.exp >= myFish.expNeed) {
     myFish.exp -= myFish.expNeed;
-    if (myFish.tier < EVO_TIERS.length) {
-      myFish.tier += 1;
-      myFish.expNeed = EVO_TIERS[myFish.tier - 1].expNeed;
-      if (myFish.tier >= 3) sessionStats.reachedTier3 = 1;
-    } else {
-      myFish.expNeed = Math.round(myFish.expNeed * 1.25);
-    }
-    myFish.maxHp += 35;
-    myFish.hp = Math.min(myFish.maxHp, myFish.hp + 50);
-    myFish.dmg += 6;
+    myFish.level += 1;
+    myFish.expNeed = Math.round(45 + (myFish.level - 1) * 18);
+
+    const oldTier = myFish.tier;
+    const newTier = getTierFromLevel(myFish.level);
+    myFish.tier = newTier;
+    if (newTier >= 2) sessionStats.reachedTier2 = 1;
+
+    myFish.baseMaxHp += 20;
+    myFish.hp = Math.min(getEffectiveStats().maxHp, myFish.hp + 30);
+    myFish.baseDmg += 3;
     pendingLevelUps += 1;
-    addToast(`✨ TIẾN HÓA: ${EVO_TIERS[myFish.tier - 1].name}!`);
+
+    if (newTier > oldTier) {
+      addToast(`🌟 TIẾN HÓA DẠNG ${newTier}: ${EVO_TIERS[newTier - 1].name}!`);
+    } else {
+      addToast(`⬆️ Lên Cấp ${myFish.level} (Kích thước tăng!)`);
+    }
   }
+
   if (pendingLevelUps > 0 && !choosingBuff) {
     openBuffChoice();
   }
@@ -1298,6 +1683,9 @@ function openBuffChoice() {
   biteHold = false;
   resetJoystick();
   myFish.shieldTimer = Math.max(myFish.shieldTimer, 4.0);
+  document.getElementById("buff-modal-title").textContent =
+    myFish.level % 10 === 0 ? `🌟 TIẾN HÓA CẤP ${myFish.level}! 🌟` : `✨ LÊN CẤP ${myFish.level}! ✨`;
+
   const shuffled = [...BUFF_POOL].sort(() => Math.random() - 0.5).slice(0, 3);
   const container = document.getElementById("buff-choices");
   container.innerHTML = "";
@@ -1324,24 +1712,19 @@ function openBuffChoice() {
 function applyBuff(id) {
   myFish.buffCounts[id] = (myFish.buffCounts[id] || 0) + 1;
   if (id === "eatRange") myFish.eatRangeBonus += 0.25;
-  if (id === "speed") myFish.speed *= 1.12;
+  if (id === "speed") myFish.baseSpeed *= 1.12;
   if (id === "maxHp") {
-    const add = myFish.maxHp * 0.25;
-    myFish.maxHp += add;
+    const add = myFish.baseMaxHp * 0.25;
+    myFish.baseMaxHp += add;
     myFish.hp += add;
   }
-  if (id === "biteDmg") myFish.dmg *= 1.18;
+  if (id === "biteDmg") myFish.baseDmg *= 1.18;
   if (id === "size") myFish.sizeMult += 0.12;
   if (id === "skillDmg") myFish.skillDmgMult += 0.25;
   if (id === "skillCd") myFish.skillCdMult *= 0.85;
 }
 
-function getFishRadius(tier, sizeMult = 1) {
-  const t = Math.min(EVO_TIERS.length, Math.max(1, tier));
-  return EVO_TIERS[t - 1].baseRadius * sizeMult;
-}
-
-// ==================== VẼ THỦY CUNG, MỒI, CÁ & HIỆU ỨNG ====================
+// ==================== VẼ THỦY CUNG, HIỆU ỨNG SKILL ĐẶC BIỆT & CÁ ====================
 function renderGame() {
   const w = logicalW, h = logicalH;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -1394,12 +1777,23 @@ function renderGame() {
     ctx.stroke();
   });
 
-  // Mồi thủy cung bằng hình ảnh Data/Images/thuc-an
   const t = performance.now() / 1000;
+
+  // Vẽ Lĩnh Vực "Áp Chế Tuyệt Đối" của Cá Của Vua (nằm dưới lớp cá)
+  if (myFish && myFish.ultTimer > 0 && myFish.species === "kingfish") {
+    drawKingDomain(myFish.x, myFish.y, t);
+  }
+  Object.values(remotePlayers).forEach(p => {
+    if (p.ultActive && p.species === "kingfish") {
+      drawKingDomain(p.x, p.y, t);
+    }
+  });
+
+  // Mồi thủy cung
   foods.forEach(f => {
     const pulse = Math.sin(t * 3.5 + f.phase) * 1.5;
     const bobY = Math.sin(t * 2.5 + f.phase) * 3;
-    if (foodImgReady) {
+    if (foodImgObj.ready) {
       const size = (f.r * 5.2) + pulse * 2;
       if (f.val > 20) {
         ctx.save();
@@ -1410,7 +1804,7 @@ function renderGame() {
         ctx.fill();
         ctx.restore();
       }
-      ctx.drawImage(foodImg, f.x - size / 2, f.y + bobY - size / 2, size, size);
+      ctx.drawImage(foodImgObj.img, f.x - size / 2, f.y + bobY - size / 2, size, size);
     } else {
       ctx.fillStyle = f.color;
       ctx.beginPath();
@@ -1426,26 +1820,44 @@ function renderGame() {
     ctx.fill();
   });
 
+  // Lưu ảnh phân thân mờ dần của Cá Chim (Tốc Độ Ánh Sáng)
+  afterimages.forEach(af => {
+    ctx.save();
+    ctx.globalAlpha = (af.life / af.maxLife) * 0.48;
+    drawDetailedFish(af.x, af.y, af.angle, af.species, af.level, af.tier, af.sizeMult, "", 1, 1, false, false, false, 0, false, false, t, true);
+    ctx.restore();
+  });
+
   const top1Uid = getTop1Uid();
+  const domainCheck = getKingDomainEffects();
+  const myKingUlt = myFish && myFish.ultTimer > 0 && myFish.species === "kingfish";
 
+  // Vẽ AI Cá
   aiFishes.forEach(ai => {
-    drawDetailedFish(ai.x, ai.y, ai.angle, ai.species, ai.tier, 1, ai.name, ai.hp, ai.maxHp, false, false, false, 0, t);
+    drawDetailedFish(ai.x, ai.y, ai.angle, ai.species, ai.level, ai.tier, 1, ai.name, ai.hp, ai.maxHp, false, false, false, 0, false, !!ai.suppressed, t, false);
   });
 
+  // Vẽ Người chơi khác
   Object.values(remotePlayers).forEach(p => {
-    drawDetailedFish(p.x, p.y, p.angle, p.species, p.tier || 1, p.sizeMult || 1, p.name, p.hp, p.maxHp, p.uid === top1Uid, false, p.shield, p.chomping ? 0.8 : 0, t);
+    const pSuppressed = myKingUlt && Math.hypot(p.x - myFish.x, p.y - myFish.y) <= DOMAIN_RADIUS;
+    drawDetailedFish(p.x, p.y, p.angle, p.species, p.level || 1, p.tier || 1, p.sizeMult || 1, p.name, p.hp, p.maxHp, p.uid === top1Uid, false, p.shield, p.chomping ? 0.8 : 0, !!p.ultActive, pSuppressed, t, false);
   });
 
-  if (bossState && bossState.alive) {
-    drawDetailedFish(bossState.x, bossState.y, bossState.angle || 0, "boss", bossState.tier, 1.35, `BOSS THỦY CUNG (Cấp ${bossState.tier})`, bossState.hp, bossState.maxHp, false, true, false, 0.35, t);
-  }
+  // Vẽ 3 Con Boss
+  Object.values(bossesState).forEach(b => {
+    if (!b || !b.alive) return;
+    const bSuppressed = myKingUlt && Math.hypot(b.x - myFish.x, b.y - myFish.y) <= DOMAIN_RADIUS;
+    drawDetailedFish(b.x, b.y, b.angle || 0, "boss", b.level || 10, b.tier || 2, 1.35, `${b.name} (Cấp ${b.level || b.tier * 10})`, b.hp, b.maxHp, false, true, false, 0.35, false, bSuppressed, t, false);
+  });
 
+  // Vẽ Bản thân
   if (myFish) {
     const chomp = myFish.chompTimer > 0 ? myFish.chompTimer / 0.22 : 0;
-    drawDetailedFish(myFish.x, myFish.y, myFish.angle, myFish.species, myFish.tier, myFish.sizeMult, myFish.name, myFish.hp, myFish.maxHp, myFish.uid === top1Uid, false, myFish.shieldTimer > 0, chomp, t);
+    const eff = getEffectiveStats();
+    drawDetailedFish(myFish.x, myFish.y, myFish.angle, myFish.species, myFish.level, myFish.tier, myFish.sizeMult, myFish.name, myFish.hp, eff.maxHp, myFish.uid === top1Uid, false, myFish.shieldTimer > 0, chomp, myFish.ultTimer > 0, domainCheck.suppressed, t, false);
   }
 
-  // Hiệu ứng Răng Ma Cà Rồng khi cắn
+  // Hiệu ứng Cắn Ma Cà Rồng + Hiệu ứng Chém Đứt (Lưỡi Kiếm Tinh Xảo)
   biteEffects.forEach(ef => {
     const alpha = ef.life / ef.maxLife;
     ctx.save();
@@ -1460,7 +1872,34 @@ function renderGame() {
         ctx.lineTo(ef.x + Math.cos(a) * ef.radius * (1.2 - alpha * 0.4), ef.y + Math.sin(a) * ef.radius * (1.2 - alpha * 0.4));
         ctx.stroke();
       }
+    } else if (ef.swordSlash) {
+      // Hiệu ứng chém đứt Lưỡi Kiếm Tinh Xảo phía trước mặt
+      ctx.translate(ef.x, ef.y);
+      ctx.rotate(ef.angle);
+      if (slashImgObj.ready) {
+        const sz = ef.radius * 2.5;
+        ctx.drawImage(slashImgObj.img, -sz * 0.35, -sz / 2, sz, sz);
+      } else {
+        const R = ef.radius * 1.15;
+        const slashGrad = ctx.createLinearGradient(-R * 0.3, -R, R * 0.9, R);
+        slashGrad.addColorStop(0, "rgba(56, 189, 248, 0.2)");
+        slashGrad.addColorStop(0.5, "#e0f2fe");
+        slashGrad.addColorStop(1, "rgba(56, 189, 248, 0.2)");
+        ctx.fillStyle = slashGrad;
+        ctx.beginPath();
+        ctx.arc(0, 0, R, -1.25, 1.25);
+        ctx.quadraticCurveTo(R * 0.35, 0, Math.cos(-1.25) * R, Math.sin(-1.25) * R);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(-R * 0.2, -R * 0.9);
+        ctx.lineTo(R * 1.15, R * 0.9);
+        ctx.stroke();
+      }
     } else {
+      // Răng Ma Cà Rồng
       const progress = 1 - alpha;
       const snap = Math.min(1, progress * 1.65);
       const R = ef.radius * 0.88;
@@ -1512,13 +1951,11 @@ function renderGame() {
           ctx.fill();
           ctx.stroke();
         });
-
         ctx.restore();
       };
 
       drawVampireJaw(1);
       drawVampireJaw(-1);
-
       if (snap > 0.7) {
         ctx.strokeStyle = "#fff1f2";
         ctx.lineWidth = 2.5;
@@ -1528,6 +1965,29 @@ function renderGame() {
         ctx.stroke();
       }
     }
+    ctx.restore();
+  });
+
+  // Hoạt ảnh Phản Sát Thương trên người kẻ đánh Rùa Biển
+  reflectEffects.forEach(rf => {
+    const a = rf.life / rf.maxLife;
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.translate(rf.x, rf.y);
+    const rad = 46 * (1.2 - a * 0.4);
+    ctx.strokeStyle = "#fbbf24";
+    ctx.lineWidth = 4;
+    for (let k = 0; k < 10; k++) {
+      const ang = (Math.PI * 2 * k) / 10 + a * 2;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(ang) * 10, Math.sin(ang) * 10);
+      ctx.lineTo(Math.cos(ang) * rad, Math.sin(ang) * rad);
+      ctx.stroke();
+    }
+    ctx.fillStyle = "rgba(245, 158, 11, 0.35)";
+    ctx.beginPath();
+    ctx.arc(0, 0, rad * 0.65, 0, Math.PI * 2);
+    ctx.fill();
     ctx.restore();
   });
 
@@ -1541,6 +2001,127 @@ function renderGame() {
     ctx.fillText(ft.text, ft.x, ft.y);
   });
 
+  ctx.restore();
+}
+
+// Hào quang Siêu Xayda (Dragon Ball Super Saiyan Aura)
+function drawSuperSaiyanAura(r, t) {
+  ctx.save();
+  const flameCount = 14;
+  for (let pass = 0; pass < 2; pass++) {
+    ctx.beginPath();
+    const baseR = pass === 0 ? r * 1.48 : r * 1.25;
+    for (let i = 0; i <= flameCount * 2; i++) {
+      const ang = (Math.PI * 2 * i) / (flameCount * 2);
+      const isSpike = i % 2 === 0;
+      const flicker = Math.sin(t * 24 + i * 2.1 + pass) * (r * 0.16);
+      // Ngọn lửa bốc mạnh lên phía trên giống Siêu Xayda
+      const upBias = Math.sin(ang) < 0 ? Math.abs(Math.sin(ang)) * r * 0.32 : 0;
+      const rad = (isSpike ? baseR + r * 0.36 + upBias : baseR * 0.85) + flicker;
+      const px = Math.cos(ang) * rad;
+      const py = Math.sin(ang) * rad;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fillStyle = pass === 0 ? "rgba(250, 204, 21, 0.42)" : "rgba(254, 249, 195, 0.58)";
+    ctx.fill();
+    ctx.strokeStyle = pass === 0 ? "#f59e0b" : "#fef08a";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// Khiên Đất Tổ Ong Màu Vàng (Phòng Ngự Tuyệt Đối của Rùa Biển)
+function drawHoneycombEarthShield(r, t) {
+  const shieldR = r * 1.45;
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(0, 0, shieldR, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(234, 179, 8, 0.22)";
+  ctx.fill();
+  ctx.save();
+  ctx.clip();
+
+  // Vẽ lưới lục giác tổ ong bên trong khiên
+  const hexR = Math.max(12, r * 0.32);
+  const dx = hexR * 1.5;
+  const dy = hexR * Math.sqrt(3);
+  ctx.strokeStyle = "rgba(253, 224, 71, 0.65)";
+  ctx.lineWidth = 1.6;
+
+  for (let gx = -shieldR - hexR; gx <= shieldR + hexR; gx += dx) {
+    const colIdx = Math.round(gx / dx);
+    for (let gy = -shieldR - hexR; gy <= shieldR + hexR; gy += dy) {
+      const cy = gy + (colIdx % 2 !== 0 ? dy / 2 : 0);
+      ctx.beginPath();
+      for (let k = 0; k < 6; k++) {
+        const ang = (Math.PI / 3) * k;
+        const vx = gx + Math.cos(ang) * hexR;
+        const vy = cy + Math.sin(ang) * hexR;
+        if (k === 0) ctx.moveTo(vx, vy);
+        else ctx.lineTo(vx, vy);
+      }
+      ctx.closePath();
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+
+  ctx.strokeStyle = "#facc15";
+  ctx.lineWidth = 3.5;
+  ctx.beginPath();
+  ctx.arc(0, 0, shieldR + Math.sin(t * 10) * 2, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+// Lĩnh Vực "Áp Chế Tuyệt Đối" của Cá Của Vua
+function drawKingDomain(x, y, t) {
+  ctx.save();
+  ctx.translate(x, y);
+  if (kingDomainImgObj.ready) {
+    ctx.save();
+    ctx.rotate(t * 0.4);
+    ctx.globalAlpha = 0.72;
+    ctx.drawImage(kingDomainImgObj.img, -DOMAIN_RADIUS, -DOMAIN_RADIUS, DOMAIN_RADIUS * 2, DOMAIN_RADIUS * 2);
+    ctx.restore();
+  } else {
+    const grad = ctx.createRadialGradient(0, 0, DOMAIN_RADIUS * 0.15, 0, 0, DOMAIN_RADIUS);
+    grad.addColorStop(0, "rgba(251, 191, 36, 0.10)");
+    grad.addColorStop(0.7, "rgba(185, 28, 28, 0.18)");
+    grad.addColorStop(1, "rgba(245, 158, 11, 0.42)");
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(0, 0, DOMAIN_RADIUS, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Vòng trận pháp hoàng kim xoay tròn
+    ctx.save();
+    ctx.rotate(t * 0.45);
+    ctx.strokeStyle = "rgba(253, 224, 71, 0.85)";
+    ctx.lineWidth = 3;
+    ctx.setLineDash([18, 10]);
+    ctx.beginPath();
+    ctx.arc(0, 0, DOMAIN_RADIUS - 4, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.strokeStyle = "rgba(248, 113, 113, 0.65)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let k = 0; k < 6; k++) {
+      const a = (Math.PI * 2 * k) / 6;
+      const px = Math.cos(a) * (DOMAIN_RADIUS * 0.82);
+      const py = Math.sin(a) * (DOMAIN_RADIUS * 0.82);
+      if (k === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.stroke();
+    ctx.restore();
+  }
   ctx.restore();
 }
 
@@ -1568,50 +2149,49 @@ function drawEnergyBladeFin(x, y, len, width, angleOffset, baseColor, glowColor,
   ctx.restore();
 }
 
-function drawDetailedFish(x, y, angle, species, tier, sizeMult, name, hp, maxHp, isTop1, isBoss, hasShield, chompRatio, t) {
-  const r = getFishRadius(tier, sizeMult);
+function drawDetailedFish(x, y, angle, species, level, tier, sizeMult, name, hp, maxHp, isTop1, isBoss, hasShield, chompRatio, ultActive, isSuppressed, t, isAfterimage) {
+  const r = getFishRadius(level, tier, sizeMult);
   const cfg = isBoss
-    ? {
-        color: "#0f172a",
-        midColor: "#1e3a5f",
-        bellyColor: "#cbd5e1",
-        accent: "#38bdf8",
-        finGlow: "#a5f3fc"
-      }
+    ? { color: "#0f172a", midColor: "#1e3a5f", bellyColor: "#cbd5e1", accent: "#38bdf8", finGlow: "#a5f3fc" }
     : (FISH_TYPES[species] || FISH_TYPES.swordfish);
 
   ctx.save();
   ctx.translate(x, y);
 
-  if (tier >= 3 || isBoss) {
-    const auraAlpha = isBoss ? 0.34 : 0.12 + (tier - 2) * 0.06;
-    const auraGrad = ctx.createRadialGradient(0, 0, r * 0.4, 0, 0, r * 1.55);
-    auraGrad.addColorStop(0, isBoss ? "rgba(56, 189, 248, 0.45)" : "rgba(186, 230, 253, 0.35)");
-    auraGrad.addColorStop(1, "rgba(0, 0, 0, 0)");
-    ctx.save();
-    ctx.globalAlpha = auraAlpha + Math.sin(t * 4) * 0.05;
-    ctx.fillStyle = auraGrad;
-    ctx.beginPath();
-    ctx.arc(0, 0, r * 1.55, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-  }
+  if (!isAfterimage) {
+    // Hào quang Siêu Xayda khi dùng Skill Đặc Biệt
+    if (ultActive) {
+      drawSuperSaiyanAura(r, t);
+    } else if (tier >= 3 || isBoss) {
+      const auraAlpha = isBoss ? 0.34 : 0.12 + (tier - 2) * 0.06;
+      const auraGrad = ctx.createRadialGradient(0, 0, r * 0.4, 0, 0, r * 1.55);
+      auraGrad.addColorStop(0, isBoss ? "rgba(56, 189, 248, 0.45)" : "rgba(186, 230, 253, 0.35)");
+      auraGrad.addColorStop(1, "rgba(0, 0, 0, 0)");
+      ctx.save();
+      ctx.globalAlpha = auraAlpha + Math.sin(t * 4) * 0.05;
+      ctx.fillStyle = auraGrad;
+      ctx.beginPath();
+      ctx.arc(0, 0, r * 1.55, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
 
-  if (hasShield) {
-    ctx.strokeStyle = "#51cf66";
-    ctx.lineWidth = 3.5;
-    ctx.beginPath();
-    ctx.arc(0, 0, r * 1.38, 0, Math.PI * 2);
-    ctx.stroke();
+    // Khiên đất tổ ong của Rùa Biển khi bật Skill Đặc Biệt
+    if (ultActive && species === "turtle") {
+      drawHoneycombEarthShield(r, t);
+    } else if (hasShield) {
+      ctx.strokeStyle = "#51cf66";
+      ctx.lineWidth = 3.5;
+      ctx.beginPath();
+      ctx.arc(0, 0, r * 1.38, 0, Math.PI * 2);
+      ctx.stroke();
+    }
   }
 
   ctx.save();
   ctx.rotate(angle);
-  if (Math.cos(angle) < 0) {
-    ctx.scale(1, -1);
-  }
+  if (Math.cos(angle) < 0) ctx.scale(1, -1);
 
-  // Nếu bạn đã thêm ảnh PNG tiến hóa riêng trong Data/Images/, ưu tiên hiển thị ảnh đó kèm hoạt ảnh bơi!
   const sprite = getFishSprite(isBoss ? "boss" : species, tier);
   if (sprite.ready) {
     const swimTilt = Math.sin(t * (7 + tier * 0.7)) * 0.08;
@@ -1625,7 +2205,6 @@ function drawDetailedFish(x, y, angle, species, tier, sizeMult, name, hp, maxHp,
     ctx.scale(stretch, 2 - stretch);
     ctx.drawImage(sprite.img, -drawW / 2, -drawH / 2, drawW, drawH);
   } else {
-    // Fallback đồ họa vẽ tay chi tiết nếu bậc tiến hóa đó chưa có file ảnh PNG
     const swimWag = Math.sin(t * (7.5 + tier * 0.7)) * 0.22;
     const finWag = Math.sin(t * 8.5) * 0.16;
 
@@ -1637,35 +2216,29 @@ function drawDetailedFish(x, y, angle, species, tier, sizeMult, name, hp, maxHp,
       ctx.save();
       ctx.translate(-r * 0.55, r * 0.45);
       ctx.rotate(0.5 - finWag);
-      ctx.beginPath();
-      ctx.ellipse(0, 0, r * 0.34, r * 0.15, 0, 0, Math.PI * 2);
+      ctx.beginPath(); ctx.ellipse(0, 0, r * 0.34, r * 0.15, 0, 0, Math.PI * 2);
       ctx.fill(); ctx.stroke();
       ctx.restore();
 
       ctx.save();
       ctx.translate(r * 0.35, r * 0.52);
       ctx.rotate(-0.45 + finWag * 1.4);
-      ctx.beginPath();
-      ctx.ellipse(0, 0, r * 0.46, r * 0.18, 0, 0, Math.PI * 2);
+      ctx.beginPath(); ctx.ellipse(0, 0, r * 0.46, r * 0.18, 0, 0, Math.PI * 2);
       ctx.fill(); ctx.stroke();
       ctx.restore();
 
       ctx.save();
       ctx.translate(r * 0.85, 0);
       ctx.fillStyle = cfg.midColor;
-      ctx.beginPath();
-      ctx.ellipse(0, -r * 0.05, r * 0.38, r * 0.25, 0, 0, Math.PI * 2);
+      ctx.beginPath(); ctx.ellipse(0, -r * 0.05, r * 0.38, r * 0.25, 0, 0, Math.PI * 2);
       ctx.fill(); ctx.stroke();
 
       ctx.save();
       ctx.rotate(0.1 + chompRatio * 0.45);
       ctx.fillStyle = cfg.bellyColor;
       ctx.beginPath();
-      ctx.moveTo(0, r * 0.05);
-      ctx.lineTo(r * 0.32, r * 0.08);
-      ctx.lineTo(r * 0.05, r * 0.22);
-      ctx.closePath();
-      ctx.fill();
+      ctx.moveTo(0, r * 0.05); ctx.lineTo(r * 0.32, r * 0.08); ctx.lineTo(r * 0.05, r * 0.22);
+      ctx.closePath(); ctx.fill();
       ctx.restore();
 
       ctx.fillStyle = "#fff";
@@ -1771,9 +2344,7 @@ function drawDetailedFish(x, y, angle, species, tier, sizeMult, name, hp, maxHp,
       ctx.lineWidth = 1.4;
       for (let s = -2; s <= 2; s++) {
         const sx = s * r * 0.24;
-        ctx.beginPath();
-        ctx.arc(sx, bodyH * 0.22, r * 0.22, -0.7, 0.9);
-        ctx.stroke();
+        ctx.beginPath(); ctx.arc(sx, bodyH * 0.22, r * 0.22, -0.7, 0.9); ctx.stroke();
       }
 
       if (species === "swordfish") {
@@ -1810,18 +2381,13 @@ function drawDetailedFish(x, y, angle, species, tier, sizeMult, name, hp, maxHp,
       ctx.rotate(jawAngle);
       ctx.fillStyle = "#450a0a";
       ctx.beginPath();
-      ctx.moveTo(0, -bodyH * 0.12);
-      ctx.lineTo(r * 0.45, 0);
-      ctx.lineTo(0, bodyH * 0.14);
-      ctx.closePath();
-      ctx.fill();
+      ctx.moveTo(0, -bodyH * 0.12); ctx.lineTo(r * 0.45, 0); ctx.lineTo(0, bodyH * 0.14);
+      ctx.closePath(); ctx.fill();
       ctx.fillStyle = "#fff";
       for (let tIdx = 0; tIdx < 3; tIdx++) {
         const tx = r * (0.1 + tIdx * 0.11);
         ctx.beginPath();
-        ctx.moveTo(tx, bodyH * 0.08);
-        ctx.lineTo(tx + 3, -bodyH * 0.06);
-        ctx.lineTo(tx + 6, bodyH * 0.08);
+        ctx.moveTo(tx, bodyH * 0.08); ctx.lineTo(tx + 3, -bodyH * 0.06); ctx.lineTo(tx + 6, bodyH * 0.08);
         ctx.fill();
       }
       ctx.fillStyle = cfg.bellyColor;
@@ -1829,30 +2395,21 @@ function drawDetailedFish(x, y, angle, species, tier, sizeMult, name, hp, maxHp,
       ctx.moveTo(-r * 0.1, bodyH * 0.06);
       ctx.lineTo(r * 0.46, bodyH * 0.04);
       ctx.quadraticCurveTo(r * 0.15, bodyH * 0.28, -r * 0.12, bodyH * 0.22);
-      ctx.closePath();
-      ctx.fill();
+      ctx.closePath(); ctx.fill();
       ctx.restore();
 
       ctx.strokeStyle = "rgba(15, 23, 42, 0.55)";
       ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(bodyLen * 0.28, 0, bodyH * 0.55, -0.75, 0.75);
-      ctx.stroke();
+      ctx.beginPath(); ctx.arc(bodyLen * 0.28, 0, bodyH * 0.55, -0.75, 0.75); ctx.stroke();
 
       const eyeX = bodyLen * 0.52;
       const eyeY = -bodyH * 0.22;
       ctx.fillStyle = isBoss ? "#e0f2fe" : "#ffffff";
-      ctx.beginPath();
-      ctx.ellipse(eyeX, eyeY, r * 0.16, r * 0.13, -0.2, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.beginPath(); ctx.ellipse(eyeX, eyeY, r * 0.16, r * 0.13, -0.2, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = isBoss ? "#0284c7" : "#0f172a";
-      ctx.beginPath();
-      ctx.arc(eyeX + r * 0.04, eyeY, r * 0.075, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.beginPath(); ctx.arc(eyeX + r * 0.04, eyeY, r * 0.075, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = "#fff";
-      ctx.beginPath();
-      ctx.arc(eyeX + r * 0.06, eyeY - r * 0.04, r * 0.03, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.beginPath(); ctx.arc(eyeX + r * 0.06, eyeY - r * 0.04, r * 0.03, 0, Math.PI * 2); ctx.fill();
 
       if (tier >= 3 || isBoss) {
         drawEnergyBladeFin(bodyLen * 0.22, bodyH * 0.35, r * 1.25, r * 0.26, 0.28, cfg.midColor, cfg.finGlow, finWag);
@@ -1862,10 +2419,8 @@ function drawDetailedFish(x, y, angle, species, tier, sizeMult, name, hp, maxHp,
         ctx.rotate(0.3 + finWag);
         ctx.fillStyle = cfg.accent;
         ctx.beginPath();
-        ctx.moveTo(0, 0);
-        ctx.quadraticCurveTo(-r * 0.45, r * 0.35, -r * 0.65, r * 0.08);
-        ctx.closePath();
-        ctx.fill();
+        ctx.moveTo(0, 0); ctx.quadraticCurveTo(-r * 0.45, r * 0.35, -r * 0.65, r * 0.08);
+        ctx.closePath(); ctx.fill();
         ctx.restore();
       }
     }
@@ -1873,27 +2428,37 @@ function drawDetailedFish(x, y, angle, species, tier, sizeMult, name, hp, maxHp,
 
   ctx.restore();
 
-  // Thanh máu & tên phía trên đầu
-  const barW = Math.max(56, r * 1.6);
-  const barY = -r - 24;
+  if (!isAfterimage) {
+    // Thanh máu & tên phía trên đầu
+    const barW = Math.max(56, r * 1.6);
+    const barY = -r - 24;
 
-  ctx.fillStyle = "rgba(0,0,0,0.7)";
-  ctx.fillRect(-barW / 2, barY, barW, 8);
-  const hpRatio = Math.max(0, Math.min(1, (hp || 0) / (maxHp || 1)));
-  ctx.fillStyle = isBoss ? "#ff3b3b" : "#51cf66";
-  ctx.fillRect(-barW / 2, barY, barW * hpRatio, 8);
-  ctx.strokeStyle = "rgba(255,255,255,0.3)";
-  ctx.lineWidth = 1;
-  ctx.strokeRect(-barW / 2, barY, barW, 8);
+    ctx.fillStyle = "rgba(0,0,0,0.7)";
+    ctx.fillRect(-barW / 2, barY, barW, 8);
+    const hpRatio = Math.max(0, Math.min(1, (hp || 0) / (maxHp || 1)));
+    ctx.fillStyle = isBoss ? "#ff3b3b" : "#51cf66";
+    ctx.fillRect(-barW / 2, barY, barW * hpRatio, 8);
+    ctx.strokeStyle = "rgba(255,255,255,0.3)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(-barW / 2, barY, barW, 8);
 
-  ctx.font = isBoss ? "bold 14px Segoe UI" : "bold 12px Segoe UI";
-  ctx.textAlign = "center";
-  ctx.fillStyle = isBoss ? "#ff8787" : "#ffffff";
-  const prefix = isTop1 ? "👑 " : "";
-  ctx.strokeStyle = "rgba(0,0,0,0.8)";
-  ctx.lineWidth = 3;
-  ctx.strokeText(`${prefix}${name}`, 0, barY - 6);
-  ctx.fillText(`${prefix}${name}`, 0, barY - 6);
+    ctx.font = isBoss ? "bold 14px Segoe UI" : "bold 12px Segoe UI";
+    ctx.textAlign = "center";
+    ctx.fillStyle = isBoss ? "#ff8787" : "#ffffff";
+    const prefix = isTop1 ? "👑 " : "";
+    ctx.strokeStyle = "rgba(0,0,0,0.8)";
+    ctx.lineWidth = 3;
+    ctx.strokeText(`${prefix}${name}`, 0, barY - 6);
+    ctx.fillText(`${prefix}${name}`, 0, barY - 6);
+
+    // Chữ "Áp chế huyết mạch" khi nằm trong Lĩnh Vực của Cá Vua
+    if (isSuppressed) {
+      ctx.font = "bold 12px Segoe UI";
+      ctx.fillStyle = "#ff4d6d";
+      ctx.strokeText("🩸 Áp chế huyết mạch", 0, r + 22);
+      ctx.fillText("🩸 Áp chế huyết mạch", 0, r + 22);
+    }
+  }
 
   ctx.restore();
 }
@@ -1926,12 +2491,15 @@ function renderMinimap() {
     }
   });
 
-  if (bossState && bossState.alive) {
-    miniCtx.fillStyle = "#ff3b3b";
-    miniCtx.beginPath();
-    miniCtx.arc(bossState.x * scale, bossState.y * scale, 5, 0, Math.PI * 2);
-    miniCtx.fill();
-  }
+  // Vẽ tất cả 3 Boss còn sống bằng chấm đỏ
+  Object.values(bossesState).forEach(b => {
+    if (b && b.alive) {
+      miniCtx.fillStyle = "#ff3b3b";
+      miniCtx.beginPath();
+      miniCtx.arc(b.x * scale, b.y * scale, 4.8, 0, Math.PI * 2);
+      miniCtx.fill();
+    }
+  });
 
   if (myFish) {
     const mx = myFish.x * scale, my = myFish.y * scale;
@@ -1950,12 +2518,14 @@ function renderMinimap() {
 
 function updateHUD() {
   if (!myFish) return;
+  const eff = getEffectiveStats();
   const evo = EVO_TIERS[Math.min(EVO_TIERS.length - 1, myFish.tier - 1)];
-  document.getElementById("hud-evo-info").textContent = `Bậc ${myFish.tier}: ${evo.name} (${Math.round(myFish.score)} đ)`;
+  document.getElementById("hud-evo-info").textContent =
+    `Cấp ${myFish.level} • Dạng ${myFish.tier}: ${evo.name} (${Math.round(myFish.score)} đ)`;
 
-  const hpPct = Math.max(0, Math.min(100, (myFish.hp / myFish.maxHp) * 100));
+  const hpPct = Math.max(0, Math.min(100, (myFish.hp / eff.maxHp) * 100));
   document.getElementById("hud-hp-fill").style.width = hpPct + "%";
-  document.getElementById("hud-hp-text").textContent = `${Math.ceil(myFish.hp)} / ${Math.round(myFish.maxHp)}`;
+  document.getElementById("hud-hp-text").textContent = `${Math.ceil(myFish.hp)} / ${eff.maxHp}`;
 
   const expPct = Math.min(100, (myFish.exp / myFish.expNeed) * 100);
   document.getElementById("hud-exp-fill").style.width = expPct + "%";
@@ -1964,18 +2534,46 @@ function updateHUD() {
   const cfg = FISH_TYPES[myFish.species];
   document.getElementById("hud-skill-name").textContent = cfg.skillName;
   document.getElementById("mobile-skill-label").textContent = cfg.skillName;
+  document.getElementById("hud-ult-name").textContent = cfg.ultName;
+  document.getElementById("mobile-ult-label").textContent = "ĐẶC BIỆT";
 
   const cdOv = document.getElementById("hud-skill-cd");
   const mobileCdOv = document.getElementById("mobile-skill-cd");
   if (myFish.skillTimer > 0) {
     const txt = myFish.skillTimer.toFixed(1) + "s";
-    cdOv.style.opacity = "1";
-    cdOv.textContent = txt;
-    mobileCdOv.style.opacity = "1";
-    mobileCdOv.textContent = txt;
+    cdOv.style.opacity = "1"; cdOv.textContent = txt;
+    mobileCdOv.style.opacity = "1"; mobileCdOv.textContent = txt;
   } else {
     cdOv.style.opacity = "0";
     mobileCdOv.style.opacity = "0";
+  }
+
+  // Cooldown / Hiệu lực Skill Đặc Biệt
+  const ultBox = document.getElementById("hud-ult-box");
+  const ultCdOv = document.getElementById("hud-ult-cd");
+  const mobileUltCdOv = document.getElementById("mobile-ult-cd");
+  if (myFish.ultTimer > 0) {
+    ultBox.classList.add("active-ult");
+    const activeTxt = `⚡${myFish.ultTimer.toFixed(0)}s`;
+    ultCdOv.style.opacity = "1";
+    ultCdOv.style.background = "rgba(217, 119, 6, 0.55)";
+    ultCdOv.textContent = activeTxt;
+    mobileUltCdOv.style.opacity = "1";
+    mobileUltCdOv.style.background = "rgba(217, 119, 6, 0.55)";
+    mobileUltCdOv.textContent = activeTxt;
+  } else if (myFish.ultCdTimer > 0) {
+    ultBox.classList.remove("active-ult");
+    const txt = myFish.ultCdTimer.toFixed(0) + "s";
+    ultCdOv.style.opacity = "1";
+    ultCdOv.style.background = "rgba(0, 0, 0, 0.74)";
+    ultCdOv.textContent = txt;
+    mobileUltCdOv.style.opacity = "1";
+    mobileUltCdOv.style.background = "rgba(0, 0, 0, 0.74)";
+    mobileUltCdOv.textContent = txt;
+  } else {
+    ultBox.classList.remove("active-ult");
+    ultCdOv.style.opacity = "0";
+    mobileUltCdOv.style.opacity = "0";
   }
 
   const buffBar = document.getElementById("active-buffs-bar");
@@ -1993,14 +2591,29 @@ function updateHUD() {
     </div>
   `).join("");
 
-  const banner = document.getElementById("boss-timer-banner");
-  if (!bossState) {
-    banner.textContent = "Boss: Đang khởi tạo...";
-  } else if (bossState.alive) {
-    banner.textContent = `👹 Boss Cấp ${bossState.tier}: ${Math.round(bossState.hp)} HP`;
+  // Trạng thái cả 3 Con Boss
+  const bossListEl = document.getElementById("boss-status-list");
+  bossListEl.innerHTML = BOSS_SPAWNS.map((sp, i) => {
+    const b = bossesState[sp.id];
+    if (!b) return `<div class="boss-row"><span>Boss ${i + 1}</span><span>...</span></div>`;
+    if (b.alive) {
+      return `<div class="boss-row"><span>👹 ${sp.name}</span><span>${Math.round(b.hp)} HP</span></div>`;
+    }
+    const sec = Math.max(0, Math.ceil((b.respawnAt - Date.now()) / 1000));
+    return `<div class="boss-row respawning"><span>⏳ ${sp.name}</span><span>${sec}s</span></div>`;
+  }).join("");
+
+  // Banner Sự Kiện phía trên chính giữa màn hình
+  const evBanner = document.getElementById("event-banner");
+  const activeEvId = getActiveEventType();
+  if (activeEvId) {
+    const evInfo = EVENTS_POOL.find(x => x.id === activeEvId);
+    const remainSec = Math.max(0, Math.ceil((eventState.endsAt - Date.now()) / 1000));
+    document.getElementById("event-title").textContent = `${evInfo.title} (${remainSec}s)`;
+    document.getElementById("event-desc").textContent = evInfo.desc;
+    evBanner.classList.remove("hidden");
   } else {
-    const sec = Math.max(0, Math.ceil((bossState.respawnAt - Date.now()) / 1000));
-    banner.textContent = `⏳ Boss hồi sinh: ${sec}s`;
+    evBanner.classList.add("hidden");
   }
 }
 
@@ -2032,7 +2645,7 @@ async function finishMatch(isDead, reason) {
   biteHold = false;
   resetJoystick();
   cancelAnimationFrame(animFrameId);
-  disconnectRealtimeRoom();
+  await disconnectRealtimeRoom();
 
   await ensureDailyQuestReset(false);
 
@@ -2045,7 +2658,7 @@ async function finishMatch(isDead, reason) {
   userData.quests.foodEaten = (userData.quests.foodEaten || 0) + sessionStats.foodEaten;
   userData.quests.fishKilled = (userData.quests.fishKilled || 0) + sessionStats.fishKilled;
   userData.quests.bossKilled = (userData.quests.bossKilled || 0) + sessionStats.bossKilled;
-  userData.quests.reachedTier3 = Math.max(userData.quests.reachedTier3 || 0, sessionStats.reachedTier3);
+  userData.quests.reachedTier2 = Math.max(userData.quests.reachedTier2 || 0, sessionStats.reachedTier2);
   userData.quests.gamesPlayed = (userData.quests.gamesPlayed || 0) + 1;
 
   await saveUserData();
@@ -2054,13 +2667,13 @@ async function finishMatch(isDead, reason) {
     document.getElementById("death-title").textContent = "💀 BẠN ĐÃ TỬ VONG!";
     document.getElementById("death-summary").innerHTML = `
       <div>${escapeHtml(reason)}</div>
-      <div>Điểm đạt được: <b>${score}</b></div>
+      <div>Cấp đạt được: <b>Cấp ${myFish.level}</b> • Điểm: <b>${score}</b></div>
       <div>Cá đã nuốt: <b>${sessionStats.fishKilled}</b> • Mồi đã ăn: <b>${sessionStats.foodEaten}</b></div>
       <div>Coin nhận được: <b style="color:#ffd43b">+${totalCoins} Coin</b></div>
     `;
     document.getElementById("death-modal").classList.remove("hidden");
   } else {
-    renderLobby();
+    await renderLobby();
     showScreen("lobby");
   }
 }
