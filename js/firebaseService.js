@@ -76,10 +76,10 @@ let roomUnsubs = [];
 
 function createInitialBossData(sp, idx, bossLevel, minutesElapsed = 0) {
   const bossTier = Math.min(5, Math.max(2, 1 + Math.floor(bossLevel / 10)));
-  const hpTimeMult = 1 + minutesElapsed * 0.18;
-  const dmgTimeMult = 1 + minutesElapsed * 0.12;
-  const maxHp = Math.round((900 + bossLevel * 125) * hpTimeMult);
-  const dmg = Math.round((65 + bossLevel * 12) * dmgTimeMult);
+  const hpTimeMult = 1 + minutesElapsed * 0.08;  // +8% máu mỗi phút
+  const dmgTimeMult = 1 + minutesElapsed * 0.05; // +5% sát thương mỗi phút
+  const maxHp = Math.round((650 + bossLevel * 75) * hpTimeMult);
+  const dmg = Math.round((24 + bossLevel * 3.2) * dmgTimeMult);
 
   return {
     id: sp.id, name: sp.name, alive: true, tier: bossTier, level: bossLevel,
@@ -218,7 +218,7 @@ export function runBossDamageTransaction(bossId, uid, dmg, bossMeta, onResult) {
 export function hostUpdateWorld(bossesState, eventState, allPlayers, highestTier, highestLevel = 10, roomStartedAt = Date.now()) {
   const now = Date.now();
   const minutesElapsed = Math.max(0, (now - (roomStartedAt || now)) / 60000);
-  const desiredBossLevel = Math.max(10, Math.round(highestLevel + 2 + minutesElapsed * 0.6));
+  const desiredBossLevel = Math.max(10, Math.round(highestLevel + 2 + minutesElapsed * 0.3));
 
   BOSS_SPAWNS.forEach((sp, idx) => {
     const b = bossesState[sp.id];
@@ -243,11 +243,11 @@ export function hostUpdateWorld(bossesState, eventState, allPlayers, highestTier
     const hungryMult = isHungry ? 1.5 : 1.0;
 
     const desiredTier = Math.min(5, Math.max(2, 1 + Math.floor(desiredBossLevel / 10)));
-    const scaledDmg = Math.round((65 + Math.max(b.level || 10, desiredBossLevel) * 12) * (1 + minutesElapsed * 0.12));
+    const scaledDmg = Math.round((24 + Math.max(b.level || 10, desiredBossLevel) * 3.2) * (1 + minutesElapsed * 0.05));
     const patch = {
       tier: Math.max(b.tier || 2, desiredTier),
       level: Math.max(b.level || 10, desiredBossLevel),
-      dmg: Math.max(b.dmg || 150, scaledDmg)
+      dmg: Math.max(b.dmg || 56, scaledDmg)
     };
 
     if (target) {
@@ -292,7 +292,7 @@ export function hostUpdateWorld(bossesState, eventState, allPlayers, highestTier
 
       if (minDist > meleeRange && minDist <= rangedRange && now >= (b.rangedCdUntil || 0)) {
         const dmgVal = Math.round(patch.dmg * (isAbs ? 1.5 : 1.0));
-        patch.rangedCdUntil = now + 1700;
+        patch.rangedCdUntil = now + 2200;
         patch.rangedStrike = {
           id: `t_${sp.id}_${now}`,
           x: Math.round(target.x),
@@ -320,7 +320,7 @@ export function hostUpdateWorld(bossesState, eventState, allPlayers, highestTier
     else if (Math.hypot(b.x - sp.x, b.y - sp.y) > 1400) angle = Math.atan2(sp.y - b.y, sp.x - b.x);
     else if (Math.random() < 0.08) angle += (Math.random() - 0.5) * 1.2;
 
-    let speed = 13;
+    let speed = 11.5;
     if (isHungry) speed *= 1.5;
     if (isAbs) speed *= 1.2;
     if (isLunging) speed *= 2.4;
