@@ -60,7 +60,7 @@ export class GameRenderer {
 
     this.fishSpriteCache = {};
 
-    this.corals = Array.from({ length: 45 }, () => ({
+    this.corals = Array.from({ length: 180 }, () => ({
       x: Math.random() * MAP_SIZE, y: Math.random() * MAP_SIZE,
       r: 30 + Math.random() * 70, hue: 160 + Math.random() * 180
     }));
@@ -100,6 +100,12 @@ export class GameRenderer {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     const viewScale = Math.min(1.0, Math.max(0.56, Math.min(w, h) / 760));
+    const halfW = (w / 2) / viewScale + 140;
+    const halfH = (h / 2) / viewScale + 140;
+    const minX = camera.x - halfW, maxX = camera.x + halfW;
+    const minY = camera.y - halfH, maxY = camera.y + halfH;
+    const inView = (ox, oy, pad = 0) => ox >= minX - pad && ox <= maxX + pad && oy >= minY - pad && oy <= maxY + pad;
+
     const grad = ctx.createLinearGradient(0, 0, 0, h);
     grad.addColorStop(0, "#0b5b8c"); grad.addColorStop(0.55, "#053356"); grad.addColorStop(1, "#02182b");
     ctx.fillStyle = grad; ctx.fillRect(0, 0, w, h);
@@ -121,11 +127,13 @@ export class GameRenderer {
     ctx.strokeRect(0, 0, MAP_SIZE, MAP_SIZE);
 
     this.corals.forEach(c => {
+      if (!inView(c.x, c.y, c.r)) return;
       ctx.fillStyle = `hsla(${c.hue}, 55%, 32%, 0.22)`;
       ctx.beginPath(); ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2); ctx.fill();
     });
 
     bubbles.forEach(b => {
+      if (!inView(b.x, b.y, 10)) return;
       ctx.strokeStyle = "rgba(200, 244, 255, 0.35)"; ctx.lineWidth = 1.2;
       ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.stroke();
     });
@@ -165,6 +173,7 @@ export class GameRenderer {
 
     // Item Buff trên map
     (mapItems || []).forEach(it => {
+      if (!inView(it.x, it.y, 40)) return;
       const bob = Math.sin(t * 3.5 + it.phase) * 4;
       const imgObj = this.itemImgs[it.type];
       ctx.save();
@@ -191,6 +200,7 @@ export class GameRenderer {
 
     // Thức ăn
     foods.forEach(f => {
+      if (!inView(f.x, f.y, 40)) return;
       const pulse = Math.sin(t * 3.5 + f.phase) * 1.5;
       const bobY = Math.sin(t * 2.5 + f.phase) * 3;
       if (isImgOk(this.foodImg)) {
@@ -219,6 +229,7 @@ export class GameRenderer {
     const myDomRadius = (myFish && myFish.ultTimer > 0 && getFishConfig(myFish.species).ultimate.domainRadius) || 0;
 
     aiFishes.forEach(ai => {
+      if (!inView(ai.x, ai.y, 120)) return;
       this._drawFish(ai.x, ai.y, ai.angle, ai.species, ai.level, ai.tier, 1, ai.name, ai.hp, ai.maxHp, false, false, false, 0, false, !!ai.suppressed, 0, "", t, false);
     });
 

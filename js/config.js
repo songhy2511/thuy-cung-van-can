@@ -1,7 +1,9 @@
-export const MAP_SIZE = 3200;
-export const BASE_FOOD_COUNT = 312;    // Tăng +30% mật độ mồi (240 -> 312)
-export const MAP_ITEM_COUNT = 18;      // Số lượng Item Buff rải rác trên map
-export const MAP_ITEM_DURATION = 15;   // Thời gian hiệu lực buff tạm thời (15 giây)
+export const MAP_SIZE = 9600;          // Rộng x3 (3200 -> 9600)
+export const BASE_FOOD_COUNT = 1600;   // Mật độ mồi tương xứng map lớn
+export const AI_FISH_COUNT = 45;       // Số lượng cá AI trên map
+export const MAP_ITEM_COUNT = 12;      // Giảm mật độ item buff rải rác
+export const MAP_ITEM_RESPAWN_MS = 10000; // Hồi lại item sau 10 giây kể từ khi bị ăn
+export const MAP_ITEM_DURATION = 15;   // Hiệu lực buff tạm thời (15 giây)
 
 export const BOSS_RESPAWN_MS = 60000;   // 1 phút
 export const EVENT_DURATION_MS = 30000; // Sự kiện kéo dài 30 giây
@@ -23,9 +25,9 @@ export const EVO_TIERS = [
 ];
 
 export const BOSS_SPAWNS = [
-  { id: "boss_0", name: "Boss Bắc Hải", x: 850, y: 850 },
-  { id: "boss_1", name: "Boss Đông Hải", x: 2350, y: 1050 },
-  { id: "boss_2", name: "Boss Nam Hải", x: 1600, y: 2350 }
+  { id: "boss_0", name: "Boss Bắc Hải", x: 2500, y: 2500 },
+  { id: "boss_1", name: "Boss Đông Hải", x: 7100, y: 3100 },
+  { id: "boss_2", name: "Boss Nam Hải", x: 4800, y: 7100 }
 ];
 
 export const UPGRADE_DEFS = [

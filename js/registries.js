@@ -72,16 +72,16 @@ export const BUFF_REGISTRY = {
   skillDmg: { id: "skillDmg", icon: "💥", name: "Cuồng Nộ", desc: "+25% sát thương Skill", apply: (f) => { f.skillDmgMult += 0.25; } },
   skillCd:  { id: "skillCd",  icon: "⏱️", name: "Linh Hoạt", desc: "-15% hồi chiêu Skill", apply: (f) => { f.skillCdMult *= 0.85; } }
 };
-
+  
 // ==================== REGISTRY ITEM BUFF RẢI RÁC TRÊN MAP (15s) ====================
 export const MAP_ITEM_REGISTRY = {
-  speed:   { id: "speed",   name: "Siêu Tốc",    icon: "⚡",  imgKey: "item-speed",   color: "#facc15", timed: true,  modifiers: { speedMult: 1.2 } },
-  magnet:  { id: "magnet",  name: "Thu Hút",     icon: "🧲",  imgKey: "item-magnet",  color: "#38bdf8", timed: true,  modifiers: { eatRangeMult: 1.2 } },
-  exp:     { id: "exp",     name: "Kinh Nghiệm", icon: "✨",  imgKey: "item-exp",     color: "#a855f7", timed: true,  modifiers: { expMult: 1.3 }, fallbackText: "EXP" },
-  poison:  { id: "poison",  name: "Rải Độc",     icon: "☠️",  imgKey: "item-poison",  color: "#22c55e", timed: true,  leavesPoison: true },
-  luck:    { id: "luck",    name: "May Rủi",     icon: "🍀",  imgKey: "item-luck",    color: "#4ade80", timed: false },
-  aoma:    { id: "aoma",    name: "Ảo Ma",       icon: "❓",  imgKey: "item-aoma",    color: "#e879f9", timed: false, fallbackText: "?" },
-  ironman: { id: "ironman", name: "Iron Man",    icon: "🤖",  imgKey: "item-ironman", color: "#ef4444", timed: true,  modifiers: { dmgTakenMult: 0.7 }, ccImmune: true }
+  speed:   { id: "speed",   name: "Siêu Tốc",    icon: "⚡",  imgKey: "item-speed",   color: "#facc15", weight: 1, timed: true,  modifiers: { speedMult: 1.2 } },
+  magnet:  { id: "magnet",  name: "Thu Hút",     icon: "🧲",  imgKey: "item-magnet",  color: "#38bdf8", weight: 1, timed: true,  modifiers: { eatRangeMult: 1.2 } },
+  exp:     { id: "exp",     name: "Kinh Nghiệm", icon: "✨",  imgKey: "item-exp",     color: "#a855f7", weight: 1, timed: true,  modifiers: { expMult: 1.3 }, fallbackText: "EXP" },
+  poison:  { id: "poison",  name: "Rải Độc",     icon: "☠️",  imgKey: "item-poison",  color: "#22c55e", weight: 1, timed: true,  leavesPoison: true },
+  luck:    { id: "luck",    name: "May Rủi",     icon: "🍀",  imgKey: "item-luck",    color: "#4ade80", weight: 1, timed: false },
+  aoma:    { id: "aoma",    name: "Ảo Ma",       icon: "❓",  imgKey: "item-aoma",    color: "#e879f9", weight: 3, timed: false, fallbackText: "?" }, // Giữ nguyên tỉ lệ cao để troll
+  ironman: { id: "ironman", name: "Iron Man",    icon: "🤖",  imgKey: "item-ironman", color: "#ef4444", weight: 1, timed: true,  modifiers: { dmgTakenMult: 0.7 }, ccImmune: true }
 };
 
 // ==================== REGISTRY SỰ KIỆN TOÀN BẢN ĐỒ ====================

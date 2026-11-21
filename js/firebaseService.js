@@ -316,7 +316,7 @@ export function hostUpdateWorld(bossesState, eventState, allPlayers, highestTier
     // Di chuyển Boss
     let angle = b.angle || 0;
     if (target) angle = Math.atan2(target.y - b.y, target.x - b.x);
-    else if (Math.hypot(b.x - sp.x, b.y - sp.y) > 550) angle = Math.atan2(sp.y - b.y, sp.x - b.x);
+    else if (Math.hypot(b.x - sp.x, b.y - sp.y) > 1400) angle = Math.atan2(sp.y - b.y, sp.x - b.x);
     else if (Math.random() < 0.08) angle += (Math.random() - 0.5) * 1.2;
 
     let speed = 13;
