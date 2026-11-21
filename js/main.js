@@ -576,7 +576,7 @@ function activateMapItem(item) {
 
 // ==================== CHIẾN ĐẤU & SKILL ====================
 function applyDamageToMe(rawDmg, attackerName, stunDuration = 0, onReflectCallback = null) {
-  if (!inGame || !myFish || myFish.shieldTimer > 0) return false;
+  if (!inGame || !myFish) return false;
 
   const ult = getFishConfig(myFish.species).ultimate;
   if (myFish.ultTimer > 0) {
@@ -590,6 +590,8 @@ function applyDamageToMe(rawDmg, attackerName, stunDuration = 0, onReflectCallba
       return false;
     }
   }
+
+  if (myFish.shieldTimer > 0) return false;
 
   const eff = getEffectiveStats();
   const actualDmg = Math.max(1, Math.round(rawDmg * eff.dmgTakenMult));
@@ -831,26 +833,34 @@ function lerpAngle(a, b, t) {
 // ==================== GAME LOOP ====================
 let lastTime = 0;
 
+let loopErrorLogged = false;
+
 function gameLoop(now) {
   if (!inGame) return;
-  const dt = Math.min(0.05, (now - lastTime) / 1000);
-  lastTime = now;
-  updateGame(dt);
-
-  const effStats = getEffectiveStats();
-  const domainCheck = getDomainEffects();
-  const top1Uid = getTop1Uid();
-
-  renderer.renderWorld({
-    camera, bubbles, foods, mapItems, poisonClouds, projectiles, afterimages, aiFishes, remotePlayers, bossesState,
-    myFish, effStats, domainCheck, biteEffects, reflectEffects, floatingTexts, top1Uid
-  });
-  renderer.renderMinimap(myFish, remotePlayers, bossesState, top1Uid);
-  updateHUD(effStats);
-
   animFrameId = requestAnimationFrame(gameLoop);
-}
+  try {
+    const dt = Math.min(0.05, Math.max(0, (now - lastTime) / 1000));
+    lastTime = now;
+    updateGame(dt);
 
+    const effStats = getEffectiveStats();
+    const domainCheck = getDomainEffects();
+    const top1Uid = getTop1Uid();
+
+    renderer.renderWorld({
+      camera, bubbles, foods, mapItems, poisonClouds, projectiles, afterimages, aiFishes, remotePlayers, bossesState,
+      myFish, effStats, domainCheck, biteEffects, reflectEffects, floatingTexts, top1Uid
+    });
+    renderer.renderMinimap(myFish, remotePlayers, bossesState, top1Uid);
+    updateHUD(effStats);
+  } catch (err) {
+    if (!loopErrorLogged) {
+      loopErrorLogged = true;
+      console.error("GameLoop error:", err);
+      addToast("⚠️ Lỗi nhỏ: " + err.message);
+    }
+  }
+}
 function updateGame(dt) {
   if (!myFish) return;
   ["skillTimer", "ultTimer", "ultCdTimer", "shieldTimer", "stunTimer", "dashTimer", "reflectTimer", "biteCooldown", "chompTimer"].forEach(k => {

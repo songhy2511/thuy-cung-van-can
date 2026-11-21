@@ -24,6 +24,10 @@ function loadOptionalImage(paths) {
   return obj;
 }
 
+function isImgOk(obj) {
+  return !!(obj && obj.ready && obj.img && obj.img.complete && obj.img.naturalWidth > 0);
+}
+
 export class GameRenderer {
   constructor(canvas, miniCanvas) {
     this.canvas = canvas;
@@ -40,7 +44,6 @@ export class GameRenderer {
     this.slashImg = loadOptionalImage(["./Data/Images/slash-effect.png", "./Data/Images/slash-effect.webp"]);
     this.domainImg = loadOptionalImage(["./Data/Images/king-domain.png", "./Data/Images/king-domain.webp"]);
 
-    // Hình ảnh kỹ năng mới của Boss (tự động dùng hiệu ứng Canvas nếu chưa thêm file)
     this.bossVortexImg = loadOptionalImage(["./Data/Images/boss-vortex.png", "./Data/Images/boss-vortex.webp"]);
     this.bossDomainImg = loadOptionalImage(["./Data/Images/boss-domain.png", "./Data/Images/boss-domain.webp"]);
     this.bossTornadoImg = loadOptionalImage(["./Data/Images/boss-tornado.png", "./Data/Images/boss-tornado.webp"]);
@@ -89,7 +92,11 @@ export class GameRenderer {
 
   renderWorld(state) {
     const { ctx, logicalW: w, logicalH: h, dpr } = this;
-    const { camera, bubbles, foods, mapItems, poisonClouds, projectiles, afterimages, aiFishes, remotePlayers, bossesState, myFish, effStats, domainCheck, biteEffects, reflectEffects, floatingTexts, top1Uid } = state;
+    const {
+      camera, bubbles, foods, mapItems, poisonClouds, projectiles, afterimages,
+      aiFishes, remotePlayers, bossesState, myFish, effStats, domainCheck,
+      biteEffects, reflectEffects, floatingTexts, top1Uid
+    } = state;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     const viewScale = Math.min(1.0, Math.max(0.56, Math.min(w, h) / 760));
@@ -126,18 +133,12 @@ export class GameRenderer {
     const t = performance.now() / 1000;
     const nowMs = Date.now();
 
-    // Lĩnh vực "Sức mạnh tuyệt đối" của Boss (vẽ hơi mờ dưới lớp cá để không cản tầm nhìn)
     Object.values(bossesState).forEach(b => {
       if (!b || !b.alive) return;
-      if ((b.absUntil || 0) > nowMs) {
-        this._drawBossDomain(b.x, b.y, BOSS_VISION_RADIUS, t);
-      }
-      if ((b.vortexUntil || 0) > nowMs) {
-        this._drawBossVortex(b.x, b.y, BOSS_VORTEX_RADIUS, t);
-      }
+      if ((b.absUntil || 0) > nowMs) this._drawBossDomain(b.x, b.y, BOSS_VISION_RADIUS, t);
+      if ((b.vortexUntil || 0) > nowMs) this._drawBossVortex(b.x, b.y, BOSS_VORTEX_RADIUS, t);
     });
 
-    // Lĩnh vực "Áp Chế Tuyệt Đối" của Cá Của Vua
     if (myFish && myFish.ultTimer > 0 && getFishConfig(myFish.species).ultimate.domainRadius) {
       this._drawDomain(myFish.x, myFish.y, getFishConfig(myFish.species).ultimate.domainRadius, t);
     }
@@ -148,55 +149,51 @@ export class GameRenderer {
       }
     });
 
-    // Vệt độc (giữ lại 5 giây)
-(poisonClouds || []).forEach(pc => {
-  const alpha = Math.min(1, pc.life / pc.maxLife);
-  ctx.save();
-  ctx.globalAlpha = alpha * 0.55;
-  const pg = ctx.createRadialGradient(pc.x, pc.y, pc.radius * 0.15, pc.x, pc.y, pc.radius);
-  pg.addColorStop(0, "rgba(74, 222, 128, 0.85)");
-  pg.addColorStop(0.6, "rgba(22, 163, 74, 0.5)");
-  pg.addColorStop(1, "rgba(21, 128, 61, 0)");
-  ctx.fillStyle = pg;
-  ctx.beginPath(); ctx.arc(pc.x, pc.y, pc.radius, 0, Math.PI * 2); ctx.fill();
-  ctx.restore();
-});
+    // Vệt độc 5 giây
+    (poisonClouds || []).forEach(pc => {
+      const alpha = Math.min(1, pc.life / pc.maxLife);
+      ctx.save();
+      ctx.globalAlpha = alpha * 0.55;
+      const pg = ctx.createRadialGradient(pc.x, pc.y, pc.radius * 0.15, pc.x, pc.y, pc.radius);
+      pg.addColorStop(0, "rgba(74, 222, 128, 0.85)");
+      pg.addColorStop(0.6, "rgba(22, 163, 74, 0.5)");
+      pg.addColorStop(1, "rgba(21, 128, 61, 0)");
+      ctx.fillStyle = pg;
+      ctx.beginPath(); ctx.arc(pc.x, pc.y, pc.radius, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    });
 
-// Item Buff rải rác trên map
-(mapItems || []).forEach(it => {
-  const bob = Math.sin(t * 3.5 + it.phase) * 4;
-  const imgObj = this.itemImgs[it.type];
-  ctx.save();
-  ctx.translate(it.x, it.y + bob);
-  // Quầng sáng tròn nổi bật phân biệt với thức ăn thường
-  const og = ctx.createRadialGradient(0, 0, 4, 0, 0, 26);
-  og.addColorStop(0, "rgba(255,255,255,0.45)");
-  og.addColorStop(0.6, it.color + "66");
-  og.addColorStop(1, "rgba(0,0,0,0)");
-  ctx.fillStyle = og;
-  ctx.beginPath(); ctx.arc(0, 0, 26, 0, Math.PI * 2); ctx.fill();
+    // Item Buff trên map
+    (mapItems || []).forEach(it => {
+      const bob = Math.sin(t * 3.5 + it.phase) * 4;
+      const imgObj = this.itemImgs[it.type];
+      ctx.save();
+      ctx.translate(it.x, it.y + bob);
+      const og = ctx.createRadialGradient(0, 0, 4, 0, 0, 26);
+      og.addColorStop(0, "rgba(255,255,255,0.45)");
+      og.addColorStop(0.6, it.color + "66");
+      og.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = og;
+      ctx.beginPath(); ctx.arc(0, 0, 26, 0, Math.PI * 2); ctx.fill();
 
-  if (imgObj && imgObj.ready) {
-    ctx.drawImage(imgObj.img, -20, -20, 40, 40);
-  } else {
-    ctx.fillStyle = "rgba(6, 28, 49, 0.9)";
-    ctx.strokeStyle = it.color;
-    ctx.lineWidth = 2.5;
-    ctx.beginPath(); ctx.arc(0, 0, 17, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-    ctx.font = it.fallbackText ? "bold 12px Segoe UI" : "18px Segoe UI";
-    ctx.fillStyle = "#fff";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(it.fallbackText || it.icon, 0, 1);
-  }
-  ctx.restore();
-});
+      if (isImgOk(imgObj)) {
+        ctx.drawImage(imgObj.img, -20, -20, 40, 40);
+      } else {
+        ctx.fillStyle = "rgba(6, 28, 49, 0.9)";
+        ctx.strokeStyle = it.color; ctx.lineWidth = 2.5;
+        ctx.beginPath(); ctx.arc(0, 0, 17, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        ctx.font = it.fallbackText ? "bold 12px Segoe UI" : "18px Segoe UI";
+        ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.fillText(it.fallbackText || it.icon, 0, 1);
+      }
+      ctx.restore();
+    });
 
     // Thức ăn
     foods.forEach(f => {
       const pulse = Math.sin(t * 3.5 + f.phase) * 1.5;
       const bobY = Math.sin(t * 2.5 + f.phase) * 3;
-      if (this.foodImg.ready) {
+      if (isImgOk(this.foodImg)) {
         const size = (f.r * 5.2) + pulse * 2;
         if (f.val > 20) {
           ctx.save(); ctx.globalAlpha = 0.38 + Math.sin(t * 5 + f.phase) * 0.12;
@@ -215,37 +212,36 @@ export class GameRenderer {
     afterimages.forEach(af => {
       ctx.save();
       ctx.globalAlpha = (af.life / af.maxLife) * 0.48;
-      this._drawFish(af.x, af.y, af.angle, af.species, af.level, af.tier, af.sizeMult, "", 1, 1, false, false, false, 0, false, false, false, "", t, true);
+      this._drawFish(af.x, af.y, af.angle, af.species, af.level, af.tier, af.sizeMult, "", 1, 1, false, false, false, 0, false, false, 0, "", t, true);
       ctx.restore();
     });
 
-    const myDomRadius = myFish && myFish.ultTimer > 0 ? getFishConfig(myFish.species).ultimate.domainRadius : 0;
+    const myDomRadius = (myFish && myFish.ultTimer > 0 && getFishConfig(myFish.species).ultimate.domainRadius) || 0;
 
     aiFishes.forEach(ai => {
-      this._drawFish(ai.x, ai.y, ai.angle, ai.species, ai.level, ai.tier, 1, ai.name, ai.hp, ai.maxHp, false, false, false, 0, false, !!ai.suppressed, false, "", t, false);
+      this._drawFish(ai.x, ai.y, ai.angle, ai.species, ai.level, ai.tier, 1, ai.name, ai.hp, ai.maxHp, false, false, false, 0, false, !!ai.suppressed, 0, "", t, false);
     });
 
     Object.values(remotePlayers).forEach(p => {
       const pSuppressed = myDomRadius > 0 && Math.hypot(p.x - myFish.x, p.y - myFish.y) <= myDomRadius;
-      this._drawFish(p.x, p.y, p.angle, p.species, p.level || 1, p.tier || 1, p.sizeMult || 1, p.name, p.hp, p.maxHp, p.uid === top1Uid, false, p.shield, p.chomping ? 0.8 : 0, !!p.ultActive, pSuppressed, !!p.stunned, "", t, false);
+      this._drawFish(p.x, p.y, p.angle, p.species, p.level || 1, p.tier || 1, p.sizeMult || 1, p.name, p.hp, p.maxHp, p.uid === top1Uid, false, p.shield, p.chomping ? 0.8 : 0, !!p.ultActive, pSuppressed, p.stunned ? 1 : 0, "", t, false);
     });
 
-    // Vẽ 3 Con Boss (kèm trạng thái Đói Khát / Sức Mạnh Tuyệt Đối)
     Object.values(bossesState).forEach(b => {
       if (!b || !b.alive) return;
       const bSuppressed = myDomRadius > 0 && Math.hypot(b.x - myFish.x, b.y - myFish.y) <= myDomRadius;
       const isHungry = (b.hungryUntil || 0) > nowMs;
       const isAbs = (b.absUntil || 0) > nowMs;
       const bossBuffLabel = isAbs ? "🔥 SỨC MẠNH TUYỆT ĐỐI" : (isHungry ? "💢 CON MỒI TRƯỚC MẮT" : "");
-      this._drawFish(b.x, b.y, b.angle || 0, "boss", b.level || 10, b.tier || 2, 1.35, `${b.name} (Cấp ${b.level || b.tier * 5})`, b.hp, b.maxHp, false, true, isAbs, 0.35, isHungry || isAbs, bSuppressed, false, bossBuffLabel, t, false);
+      this._drawFish(b.x, b.y, b.angle || 0, "boss", b.level || 10, b.tier || 2, 1.35, `${b.name} (Cấp ${b.level || b.tier * 5})`, b.hp, b.maxHp, false, true, isAbs, 0.35, isHungry || isAbs, bSuppressed, 0, bossBuffLabel, t, false);
     });
 
     if (myFish) {
       const chomp = myFish.chompTimer > 0 ? myFish.chompTimer / 0.22 : 0;
-      this._drawFish(myFish.x, myFish.y, myFish.angle, myFish.species, myFish.level, myFish.tier, myFish.sizeMult, myFish.name, myFish.hp, effStats.maxHp, myFish.uid === top1Uid, false, myFish.shieldTimer > 0, chomp, myFish.ultTimer > 0, domainCheck.suppressed, myFish.stunTimer > 0, "", t, false);
+      const flyScale = myFish.knockbackFly ? (1 + Math.sin(myFish.knockbackFly.progress * Math.PI) * 0.45) : 1;
+      this._drawFish(myFish.x, myFish.y, myFish.angle, myFish.species, myFish.level, myFish.tier, myFish.sizeMult * flyScale, myFish.name, myFish.hp, effStats.maxHp, myFish.uid === top1Uid, false, myFish.shieldTimer > 0, chomp, myFish.ultTimer > 0, domainCheck.suppressed, myFish.stunTimer, "", t, false);
     }
 
-    // Vẽ Lốc Xoáy Tầm Xa của Boss dưới chân người chơi
     Object.values(bossesState).forEach(b => {
       if (!b || !b.alive || !b.rangedStrike) return;
       if (nowMs <= b.rangedStrike.expiresAt) {
@@ -293,10 +289,8 @@ export class GameRenderer {
 
   _drawBossVortex(x, y, radius, t) {
     const ctx = this.ctx;
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.rotate(-t * 3.5);
-    if (this.bossVortexImg.ready) {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(-t * 3.5);
+    if (isImgOk(this.bossVortexImg)) {
       ctx.globalAlpha = 0.85;
       ctx.drawImage(this.bossVortexImg.img, -radius, -radius, radius * 2, radius * 2);
     } else {
@@ -304,22 +298,15 @@ export class GameRenderer {
       g.addColorStop(0, "rgba(56, 189, 248, 0.05)");
       g.addColorStop(0.6, "rgba(14, 165, 233, 0.35)");
       g.addColorStop(1, "rgba(186, 230, 253, 0.7)");
-      ctx.fillStyle = g;
-      ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.fill();
-
-      ctx.strokeStyle = "#e0f2fe";
-      ctx.lineWidth = 3;
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = "#e0f2fe"; ctx.lineWidth = 3;
       for (let arm = 0; arm < 4; arm++) {
-        ctx.save();
-        ctx.rotate((Math.PI / 2) * arm);
-        ctx.beginPath();
+        ctx.save(); ctx.rotate((Math.PI / 2) * arm); ctx.beginPath();
         for (let a = 0; a < 2.2; a += 0.2) {
-          const r = (a / 2.2) * radius;
-          const px = Math.cos(a * 2.2) * r, py = Math.sin(a * 2.2) * r;
+          const rr = (a / 2.2) * radius, px = Math.cos(a * 2.2) * rr, py = Math.sin(a * 2.2) * rr;
           if (a === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
         }
-        ctx.stroke();
-        ctx.restore();
+        ctx.stroke(); ctx.restore();
       }
     }
     ctx.restore();
@@ -327,10 +314,8 @@ export class GameRenderer {
 
   _drawBossDomain(x, y, radius, t) {
     const ctx = this.ctx;
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.globalAlpha = 0.28; // Hơi mờ để không ảnh hưởng tầm nhìn người chơi
-    if (this.bossDomainImg.ready) {
+    ctx.save(); ctx.translate(x, y); ctx.globalAlpha = 0.28;
+    if (isImgOk(this.bossDomainImg)) {
       ctx.rotate(t * 0.25);
       ctx.drawImage(this.bossDomainImg.img, -radius, -radius, radius * 2, radius * 2);
     } else {
@@ -338,45 +323,29 @@ export class GameRenderer {
       g.addColorStop(0, "rgba(126, 34, 206, 0.15)");
       g.addColorStop(0.75, "rgba(190, 18, 60, 0.42)");
       g.addColorStop(1, "rgba(244, 63, 94, 0.85)");
-      ctx.fillStyle = g;
-      ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.fill();
-
-      ctx.rotate(t * 0.3);
-      ctx.strokeStyle = "#fda4af"; ctx.lineWidth = 5; ctx.setLineDash([28, 16]);
-      ctx.beginPath(); ctx.arc(0, 0, radius - 6, 0, Math.PI * 2); ctx.stroke();
-      ctx.setLineDash([]);
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.fill();
+      ctx.rotate(t * 0.3); ctx.strokeStyle = "#fda4af"; ctx.lineWidth = 5; ctx.setLineDash([28, 16]);
+      ctx.beginPath(); ctx.arc(0, 0, radius - 6, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
     }
     ctx.restore();
   }
 
   _drawBossTornado(strike, nowMs, t) {
-    const ctx = this.ctx;
-    const isTriggered = nowMs >= strike.triggerAt;
-    ctx.save();
-    ctx.translate(strike.x, strike.y);
-
-    // Vòng cảnh báo dưới chân trước khi lốc xoáy bùng lên
-    ctx.strokeStyle = isTriggered ? "#38bdf8" : "#facc15";
-    ctx.lineWidth = 3;
+    const ctx = this.ctx, isTriggered = nowMs >= strike.triggerAt;
+    ctx.save(); ctx.translate(strike.x, strike.y);
+    ctx.strokeStyle = isTriggered ? "#38bdf8" : "#facc15"; ctx.lineWidth = 3;
     ctx.fillStyle = isTriggered ? "rgba(56, 189, 248, 0.25)" : "rgba(250, 204, 21, 0.18)";
     ctx.beginPath(); ctx.arc(0, 0, strike.radius, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
 
     if (isTriggered) {
-      if (this.bossTornadoImg.ready) {
+      if (isImgOk(this.bossTornadoImg)) {
         const w = strike.radius * 2.4, h = strike.radius * 3.0;
         ctx.drawImage(this.bossTornadoImg.img, -w / 2, -h * 0.78, w, h);
       } else {
-        // Vẽ lốc xoáy nước 3D xoay tròn bùng lên
         for (let i = 0; i < 6; i++) {
-          const prog = i / 5;
-          const ry = -prog * strike.radius * 1.9;
-          const rx = Math.sin(t * 18 + i) * 10;
-          const rw = strike.radius * (0.35 + prog * 0.75);
-          ctx.strokeStyle = i % 2 === 0 ? "#bae6fd" : "#38bdf8";
-          ctx.lineWidth = 4;
-          ctx.beginPath();
-          ctx.ellipse(rx, ry, rw, rw * 0.35, 0, 0, Math.PI * 2);
-          ctx.stroke();
+          const prog = i / 5, ry = -prog * strike.radius * 1.9, rx = Math.sin(t * 18 + i) * 10, rw = strike.radius * (0.35 + prog * 0.75);
+          ctx.strokeStyle = i % 2 === 0 ? "#bae6fd" : "#38bdf8"; ctx.lineWidth = 4;
+          ctx.beginPath(); ctx.ellipse(rx, ry, rw, rw * 0.35, 0, 0, Math.PI * 2); ctx.stroke();
         }
       }
     }
@@ -397,7 +366,7 @@ export class GameRenderer {
         }
       } else if (ef.effectType === "swordSlash") {
         ctx.translate(ef.x, ef.y); ctx.rotate(ef.angle);
-        if (this.slashImg.ready) {
+        if (isImgOk(this.slashImg)) {
           const sz = ef.radius * 2.5;
           ctx.drawImage(this.slashImg.img, -sz * 0.35, -sz / 2, sz, sz);
         } else {
@@ -456,7 +425,7 @@ export class GameRenderer {
   _drawDomain(x, y, radius, t) {
     const ctx = this.ctx;
     ctx.save(); ctx.translate(x, y);
-    if (this.domainImg.ready) {
+    if (isImgOk(this.domainImg)) {
       ctx.rotate(t * 0.4); ctx.globalAlpha = 0.72;
       ctx.drawImage(this.domainImg.img, -radius, -radius, radius * 2, radius * 2);
     } else {
@@ -491,28 +460,46 @@ export class GameRenderer {
     ctx.restore();
   }
 
+  // Khiên Đất Tổ Ong nhẹ & tối ưu (không dùng clip() tránh giật/đơ)
   _drawHoneycombShield(r, t) {
-    const ctx = this.ctx, shieldR = r * 1.45;
-    ctx.save(); ctx.beginPath(); ctx.arc(0, 0, shieldR, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(234, 179, 8, 0.22)"; ctx.fill();
-    ctx.save(); ctx.clip();
-    const hexR = Math.max(12, r * 0.32), dx = hexR * 1.5, dy = hexR * Math.sqrt(3);
-    ctx.strokeStyle = "rgba(253, 224, 71, 0.65)"; ctx.lineWidth = 1.6;
-    for (let gx = -shieldR - hexR; gx <= shieldR + hexR; gx += dx) {
-      const col = Math.round(gx / dx);
-      for (let gy = -shieldR - hexR; gy <= shieldR + hexR; gy += dy) {
-        const cy = gy + (col % 2 !== 0 ? dy / 2 : 0);
-        ctx.beginPath();
-        for (let k = 0; k < 6; k++) {
-          const ang = (Math.PI / 3) * k, vx = gx + Math.cos(ang) * hexR, vy = cy + Math.sin(ang) * hexR;
-          if (k === 0) ctx.moveTo(vx, vy); else ctx.lineTo(vx, vy);
-        }
-        ctx.closePath(); ctx.stroke();
+    const ctx = this.ctx;
+    const safeR = Math.max(12, Math.min(200, r || 24));
+    const shieldR = safeR * 1.48;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(0, 0, shieldR, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(234, 179, 8, 0.25)";
+    ctx.fill();
+
+    // Vẽ tổ ong 7 ô lục giác gọn nhẹ ngay giữa khiên
+    const hexR = Math.max(10, shieldR * 0.34);
+    const dx = hexR * 1.5;
+    const dy = hexR * 1.732;
+    const offsets = [
+      [0, 0],
+      [0, -dy], [0, dy],
+      [-dx, -dy * 0.5], [-dx, dy * 0.5],
+      [dx, -dy * 0.5], [dx, dy * 0.5]
+    ];
+    ctx.strokeStyle = "rgba(253, 224, 71, 0.85)";
+    ctx.lineWidth = 2;
+    offsets.forEach(([ox, oy]) => {
+      ctx.beginPath();
+      for (let k = 0; k < 6; k++) {
+        const ang = (Math.PI / 3) * k;
+        const vx = ox + Math.cos(ang) * hexR * 0.92;
+        const vy = oy + Math.sin(ang) * hexR * 0.92;
+        if (k === 0) ctx.moveTo(vx, vy); else ctx.lineTo(vx, vy);
       }
-    }
-    ctx.restore();
-    ctx.strokeStyle = "#facc15"; ctx.lineWidth = 3.5;
-    ctx.beginPath(); ctx.arc(0, 0, shieldR + Math.sin(t * 10) * 2, 0, Math.PI * 2); ctx.stroke();
+      ctx.closePath();
+      ctx.stroke();
+    });
+
+    ctx.strokeStyle = "#facc15";
+    ctx.lineWidth = 3.5;
+    ctx.beginPath();
+    ctx.arc(0, 0, shieldR + Math.sin(t * 10) * 2, 0, Math.PI * 2);
+    ctx.stroke();
     ctx.restore();
   }
 
@@ -529,7 +516,7 @@ export class GameRenderer {
     ctx.restore();
   }
 
-  _drawFish(x, y, angle, species, level, tier, sizeMult, name, hp, maxHp, isTop1, isBoss, hasShield, chompRatio, ultActive, isSuppressed, isStunned, statusLabel, t, isAfterimage) {
+  _drawFish(x, y, angle, species, level, tier, sizeMult, name, hp, maxHp, isTop1, isBoss, hasShield, chompRatio, ultActive, isSuppressed, stunSeconds, statusLabel, t, isAfterimage) {
     const ctx = this.ctx;
     const r = getFishRadius(level, tier, sizeMult);
     const fishCfg = isBoss ? null : getFishConfig(species);
@@ -560,7 +547,7 @@ export class GameRenderer {
     if (Math.cos(angle) < 0) ctx.scale(1, -1);
 
     const sprite = this._getFishSprite(isBoss ? "boss" : species, tier);
-    if (sprite.ready) {
+    if (isImgOk(sprite)) {
       const swimTilt = Math.sin(t * (7 + tier * 0.7)) * 0.08, stretch = 1 + Math.sin(t * 9) * 0.03;
       const drawW = r * 3.1, drawH = drawW * (sprite.img.naturalHeight / (sprite.img.naturalWidth || 1));
       ctx.rotate(swimTilt); ctx.translate(chompRatio * r * 0.22, 0); ctx.scale(stretch, 2 - stretch);
@@ -653,9 +640,10 @@ export class GameRenderer {
         ctx.font = "bold 12px Segoe UI"; ctx.fillStyle = "#fde047";
         ctx.strokeText(statusLabel, 0, barY - 22); ctx.fillText(statusLabel, 0, barY - 22);
       }
-      if (isStunned) {
+      if (stunSeconds > 0) {
+        const stunText = stunSeconds > 0.15 && stunSeconds < 20 ? `💫 CHOÁNG (${stunSeconds.toFixed(1)}s)` : "💫 CHOÁNG!";
         ctx.font = "bold 14px Segoe UI"; ctx.fillStyle = "#facc15";
-        ctx.strokeText("💫 CHOÁNG!", 0, barY - 22); ctx.fillText("💫 CHOÁNG!", 0, barY - 22);
+        ctx.strokeText(stunText, 0, barY - 24); ctx.fillText(stunText, 0, barY - 24);
       }
       if (isSuppressed) {
         ctx.font = "bold 12px Segoe UI"; ctx.fillStyle = "#ff4d6d";
