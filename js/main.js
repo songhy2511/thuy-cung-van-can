@@ -1,8 +1,7 @@
 import {
-  MAP_SIZE, BASE_FOOD_COUNT, AI_FISH_COUNT, MAP_ITEM_COUNT, MAP_ITEM_RESPAWN_MS, MAP_ITEM_DURATION,
-  EVO_TIERS, BOSS_SPAWNS, UPGRADE_DEFS, QUEST_TEMPLATES,
+  MAP_SIZE, MAP_ITEM_DURATION, EVO_TIERS, BOSS_SPAWNS, UPGRADE_DEFS, QUEST_TEMPLATES,
   BOSS_VISION_RADIUS, BOSS_VORTEX_RADIUS, MAX_UPGRADE_LEVEL, MAX_SKILL_LEVEL, SKILL_KEYS,
-  REVIVE_COST, REVIVE_INVULN_SEC, calcExpNeedForLevel
+  ADMIN_UIDS, LIVE_CONFIG, calcExpNeedForLevel
 } from "./config.js";
 import {
   getFishConfig, getFishSpecialSkill, getAllFishConfigs, getBuffList, getBuffConfig,
@@ -11,9 +10,10 @@ import {
 import * as svc from "./firebaseService.js";
 import { GameRenderer, getTierFromLevel, getFishRadius } from "./renderer.js";
 import { InputController } from "./input.js";
+import { AdminPanel } from "./adminPanel.js";
 
 // ==================== STATE ====================
-let currentUser = null, userData = null, selectedFishId = "swordfish";
+let currentUser = null, userData = null, selectedFishId = "swordfish", isAdminUser = false;
 let inGame = false, animFrameId = null, syncIntervalId = null, loopErrorLogged = false;
 let myFish = null, remotePlayers = {}, aiFishes = [], foods = [], mapItems = [];
 let poisonClouds = [], poisonDropTimer = 0, bubbles = [], floatingTexts = [];
@@ -24,12 +24,13 @@ let bossesState = {}, eventState = null, roomMeta = { startedAt: Date.now() };
 let biteHold = false, camera = { x: MAP_SIZE / 2, y: MAP_SIZE / 2 };
 let sessionStats = { foodEaten: 0, fishKilled: 0, bossKilled: 0, reachedTier2: 0, coinsEarned: 0 };
 let pendingLevelUps = 0, choosingBuff = false, awaitingRevive = false;
+let adminGodMode = false, configUnsub = null, broadcastUnsub = null;
 
 const localBossKillLock = {}, recentPvpKillReward = {}, handledTornadoIds = new Set();
 const lastVortexHitAt = {}, bossMeleeCooldown = {}, bossPoisonTick = {}, pvpPoisonTick = {};
 const barrierHitCd = {}, rollHitCd = {};
 
-// ==================== ENGINE & INPUT ====================
+// ==================== ENGINE, INPUT & ADMIN PANEL ====================
 const canvas = document.getElementById("game-canvas");
 const miniCanvas = document.getElementById("minimap-canvas");
 const renderer = new GameRenderer(canvas, miniCanvas);
@@ -47,6 +48,51 @@ const input = new InputController({
     if (cards[idx]) cards[idx].click();
   },
   onModeChange: () => { if (inGame) refreshMobileControls(); }
+});
+
+const adminPanel = new AdminPanel({
+  getMyFish: () => myFish,
+  isInGame: () => inGame && !!myFish,
+  isGodMode: () => adminGodMode,
+  toggleGodMode: () => {
+    adminGodMode = !adminGodMode;
+    addToast(adminGodMode ? "🛡️ Admin God Mode: BẬT (Bất tử)" : "🛡️ Admin God Mode: TẮT");
+  },
+  grantAdminLevels: (count) => {
+    if (!myFish) return;
+    for (let i = 0; i < count; i++) {
+      myFish.level += 1;
+      myFish.expNeed = calcExpNeedForLevel(myFish.level);
+      onLevelReached(myFish.level);
+    }
+    myFish.exp = 0;
+    addToast(`🛠️ Admin tăng +${count} cấp (Hiện tại: Cấp ${myFish.level})`);
+  },
+  grantAdminSkillPts: (pts) => {
+    if (!myFish) return;
+    myFish.skillPoints += pts;
+    addToast(`🛠️ Admin nhận +${pts} Điểm Kỹ Năng!`);
+  },
+  healAdminFull: () => {
+    if (!myFish) return;
+    myFish.hp = getEffectiveStats().maxHp;
+    myFish.stunTimer = 0;
+    addToast("❤️ Đã hồi đầy Máu!");
+  },
+  onUserDataModified: (uid, patch) => {
+    if (currentUser && uid === currentUser.uid && userData) {
+      Object.assign(userData, patch);
+      if (!inGame) renderLobby();
+    }
+  },
+  addToast
+});
+
+document.getElementById("btn-open-admin-lobby").addEventListener("click", () => isAdminUser && adminPanel.open());
+document.getElementById("btn-open-admin-game").addEventListener("click", () => {
+  if (!isAdminUser) return;
+  biteHold = false; input.resetJoystick();
+  adminPanel.open();
 });
 
 function refreshMobileControls() {
@@ -90,12 +136,26 @@ document.getElementById("btn-logout").addEventListener("click", () => svc.logout
 svc.initAuthObserver(
   async (user) => {
     currentUser = user;
+    isAdminUser = ADMIN_UIDS.includes(user.uid);
+    document.getElementById("btn-open-admin-lobby").classList.toggle("hidden", !isAdminUser);
+    document.getElementById("btn-open-admin-game").classList.toggle("hidden", !isAdminUser);
+
+    if (configUnsub) configUnsub();
+    configUnsub = svc.subscribeGlobalConfig(() => { if (!inGame && userData) renderLobby(); });
+    if (broadcastUnsub) broadcastUnsub();
+    broadcastUnsub = svc.subscribeServerBroadcast((msg) => addToast(`📢 ADMIN: ${msg}`, 6000));
+
     userData = await svc.loadUserProfile(user.uid, () => createDefaultUser(user));
     userData.upgrades = { ...createDefaultUpgrades(), ...(userData.upgrades || {}) };
     await ensureDailyQuestReset(true);
     initChatUI(); await renderLobby(); showScreen("lobby");
   },
-  () => { currentUser = null; stopChatUI(); showScreen("login"); }
+  () => {
+    currentUser = null; isAdminUser = false;
+    if (configUnsub) { configUnsub(); configUnsub = null; }
+    if (broadcastUnsub) { broadcastUnsub(); broadcastUnsub = null; }
+    stopChatUI(); showScreen("login");
+  }
 );
 
 document.getElementById("btn-save-name").addEventListener("click", async () => {
@@ -115,9 +175,10 @@ async function renderLobby() {
 
   const fishList = document.getElementById("fish-list"); fishList.innerHTML = "";
   getAllFishConfigs().forEach(f => {
+    const cost = f.id === "kingfish" ? (LIVE_CONFIG.kingFishCost ?? f.cost) : f.cost;
     const card = document.createElement("div");
     card.className = `fish-card ${f.id === "kingfish" ? "king" : ""} ${selectedFishId === f.id ? "selected" : ""}`;
-    card.innerHTML = `<div class="fish-title"><span>${f.icon} ${f.name}</span>${f.cost > 0 ? `<span class="fish-tag">🪙 ${f.cost}</span>` : `<span class="fish-tag" style="background:#51cf66">Miễn phí</span>`}</div><div class="fish-desc">${f.desc}</div>`;
+    card.innerHTML = `<div class="fish-title"><span>${f.icon} ${f.name}</span>${cost > 0 ? `<span class="fish-tag">🪙 ${cost}</span>` : `<span class="fish-tag" style="background:#51cf66">Miễn phí</span>`}</div><div class="fish-desc">${f.desc}</div>`;
     card.onclick = () => { selectedFishId = f.id; renderLobby(); };
     fishList.appendChild(card);
   });
@@ -153,7 +214,8 @@ async function renderLobby() {
   });
 
   const sf = getFishConfig(selectedFishId);
-  document.getElementById("selected-fish-summary").textContent = `Đang chọn: ${sf.icon} ${sf.name}` + (sf.cost > 0 ? ` (Trừ ${sf.cost} Coin khi vào trận)` : "");
+  const sfCost = sf.id === "kingfish" ? (LIVE_CONFIG.kingFishCost ?? sf.cost) : sf.cost;
+  document.getElementById("selected-fish-summary").textContent = `Đang chọn: ${sf.icon} ${sf.name}` + (sfCost > 0 ? ` (Trừ ${sfCost} Coin khi vào trận)` : "");
   const topArr = await svc.fetchTopLeaderboard(5);
   document.getElementById("lobby-leaderboard").innerHTML = topArr.length
     ? topArr.map((u, i) => `<div class="mini-lb-row"><span>${i === 0 ? "👑" : `#${i + 1}`} ${escapeHtml(u.nickname || "Ẩn danh")}</span><b>${u.bestScore || 0} đ</b></div>`).join("")
@@ -200,9 +262,7 @@ function getHighestPlayerLevel() {
 function isImmuneToCC(fish) {
   if (!fish) return false;
   const spec = getFishSpecialSkill(fish.species);
-  return (fish.ultTimer > 0 && !!spec?.domainRadius)
-    || (fish.tempBuffs?.ironman || 0) > 0
-    || (fish.reviveInvulnTimer || 0) > 0;
+  return adminGodMode || (fish.ultTimer > 0 && !!spec?.domainRadius) || (fish.tempBuffs?.ironman || 0) > 0 || (fish.reviveInvulnTimer || 0) > 0;
 }
 
 function applyStunToMe(seconds) {
@@ -246,7 +306,7 @@ function getEffectiveStats() {
   const spec = getFishSpecialSkill(myFish.species);
   const ev = getActiveEventConfig(), dom = getDomainEffects();
 
-  let speedMult = 1, dmgMult = 1, maxHpMult = 1, biteRangeMult = 1, expMult = 1, eatRangeMult = 1;
+  let speedMult = 1, dmgMult = 1, maxHpMult = 1, biteRangeMult = 1, expMult = LIVE_CONFIG.expGlobalMult || 1, eatRangeMult = 1;
   let dmgTakenMult = myFish.baseDmgTakenMult;
 
   if (ev?.modifiers) {
@@ -287,14 +347,12 @@ function getEffectiveStats() {
 // ==================== 5-SKILL BAR UI BUILDER ====================
 function buildSkillBarsUI() {
   const cfg = getFishConfig(myFish.species);
-  const pcBar = document.getElementById("hud-skills-bar");
-  const mobBar = document.getElementById("mobile-skills-bar");
+  const pcBar = document.getElementById("hud-skills-bar"), mobBar = document.getElementById("mobile-skills-bar");
   pcBar.innerHTML = ""; mobBar.innerHTML = "";
 
   cfg.skills.forEach((sk, idx) => {
     const typeClass = sk.isUltimate ? "ultimate-slot" : (sk.isSpecial ? "special-slot" : "");
-    const wrap = document.createElement("div");
-    wrap.className = "skill-slot-wrap";
+    const wrap = document.createElement("div"); wrap.className = "skill-slot-wrap";
     wrap.innerHTML = `
       <button type="button" class="btn-upg-skill hidden" id="upg-sk-${idx}" title="Nâng cấp ${sk.name}">+</button>
       <div class="skill-slot ${typeClass}" id="pc-sk-${idx}">
@@ -309,17 +367,12 @@ function buildSkillBarsUI() {
     pcBar.appendChild(wrap);
 
     const mBtn = document.createElement("button");
-    mBtn.type = "button";
-    mBtn.className = `m-skill-btn ${typeClass}`;
-    mBtn.id = `mob-sk-${idx}`;
+    mBtn.type = "button"; mBtn.className = `m-skill-btn ${typeClass}`; mBtn.id = `mob-sk-${idx}`;
     mBtn.innerHTML = `<span style="font-size:15px">${sk.icon}</span><span>${SKILL_KEYS[idx]}</span><div class="m-cd" id="mob-sk-cd-${idx}"></div>`;
     mBtn.addEventListener("touchstart", (e) => {
       e.preventDefault(); e.stopPropagation();
-      if (myFish.skillPoints > 0 && myFish.level >= sk.unlockLevel && myFish.skillLevels[idx] < MAX_SKILL_LEVEL && e.touches.length === 2) {
-        upgradeSkillSlot(idx);
-      } else {
-        triggerSkillSlot(idx);
-      }
+      if (myFish.skillPoints > 0 && myFish.level >= sk.unlockLevel && myFish.skillLevels[idx] < MAX_SKILL_LEVEL && e.touches.length === 2) upgradeSkillSlot(idx);
+      else triggerSkillSlot(idx);
     }, { passive: false });
     mobBar.appendChild(mBtn);
   });
@@ -329,8 +382,7 @@ function upgradeSkillSlot(idx) {
   if (!myFish || myFish.skillPoints <= 0) return;
   const sk = getFishConfig(myFish.species).skills[idx];
   if (!sk || myFish.level < sk.unlockLevel || myFish.skillLevels[idx] >= MAX_SKILL_LEVEL) return;
-  myFish.skillPoints -= 1;
-  myFish.skillLevels[idx] += 1;
+  myFish.skillPoints -= 1; myFish.skillLevels[idx] += 1;
   addToast(`⬆️ Đã nâng cấp [${sk.name}] lên Lv.${myFish.skillLevels[idx]} (+22% uy lực, -8% hồi chiêu)!`);
 }
 
@@ -339,9 +391,10 @@ document.getElementById("btn-play").addEventListener("click", startMatch);
 
 async function startMatch() {
   const cfg = getFishConfig(selectedFishId);
-  if (cfg.cost > 0) {
-    if (userData.coins < cfg.cost) return alert(`Bạn cần ${cfg.cost} Coin để sử dụng ${cfg.name}!`);
-    userData.coins -= cfg.cost;
+  const entryCost = cfg.id === "kingfish" ? (LIVE_CONFIG.kingFishCost ?? cfg.cost) : cfg.cost;
+  if (entryCost > 0) {
+    if (userData.coins < entryCost) return alert(`Bạn cần ${entryCost} Coin để sử dụng ${cfg.name}!`);
+    userData.coins -= entryCost;
     await svc.saveUserProfile(currentUser.uid, userData);
   }
 
@@ -365,9 +418,7 @@ async function startMatch() {
     healOnFood: cfg.stats.healOnFood, healOnKill: cfg.stats.healOnKill,
     eatRangeBonus: 1 + eatLvl * 0.05, sizeMult: 1,
     skillDmgMult: 1 + skPowLvl * 0.05, skillCdMult: 1,
-    skillCooldowns: [0, 0, 0, 0, 0],
-    skillLevels: [1, 1, 1, 1, 1],
-    skillPoints: 0,
+    skillCooldowns: [0, 0, 0, 0, 0], skillLevels: [1, 1, 1, 1, 1], skillPoints: 0,
     ultTimer: 0, ultFinisher: null, kingGuards: [],
     hasRevived: false, reviveInvulnTimer: 0,
     shieldTimer: 3.0, stunTimer: 0, dashTimer: 0, rollTimer: 0, rollDmg: 0, reflectTimer: 0,
@@ -384,9 +435,9 @@ async function startMatch() {
   [localBossKillLock, recentPvpKillReward, lastVortexHitAt, bossMeleeCooldown, bossPoisonTick, pvpPoisonTick, barrierHitCd, rollHitCd]
     .forEach(o => Object.keys(o).forEach(k => delete o[k]));
 
-  foods = Array.from({ length: BASE_FOOD_COUNT }, () => spawnFood());
-  mapItems = Array.from({ length: MAP_ITEM_COUNT }, () => spawnMapItem());
-  aiFishes = Array.from({ length: AI_FISH_COUNT }, (_, i) => spawnAiFish(i));
+  foods = Array.from({ length: LIVE_CONFIG.foodCount }, () => spawnFood());
+  mapItems = Array.from({ length: LIVE_CONFIG.itemCount }, () => spawnMapItem());
+  aiFishes = Array.from({ length: LIVE_CONFIG.aiCount }, (_, i) => spawnAiFish(i));
   bubbles = Array.from({ length: 220 }, () => ({ x: Math.random() * MAP_SIZE, y: Math.random() * MAP_SIZE, r: 2 + Math.random() * 5, v: 20 + Math.random() * 40 }));
 
   buildSkillBarsUI();
@@ -419,7 +470,7 @@ function startRoomSync() {
       x: Math.round(myFish.x), y: Math.round(myFish.y), angle: Number(myFish.angle.toFixed(2)),
       level: myFish.level, tier: myFish.tier, score: myFish.score,
       hp: Math.round(myFish.hp), maxHp: eff.maxHp, sizeMult: myFish.sizeMult,
-      shield: myFish.shieldTimer > 0, chomping: myFish.chompTimer > 0,
+      shield: myFish.shieldTimer > 0 || adminGodMode, chomping: myFish.chompTimer > 0,
       ultActive: myFish.ultTimer > 0, stunned: myFish.stunTimer > 0,
       joinedAt: myFish.joinedAt, updatedAt: Date.now()
     });
@@ -446,37 +497,29 @@ const spawnFood = (x, y, val = 14) => ({
 
 function spawnMapItem() {
   const pool = getMapItemList();
-  const totalWeight = pool.reduce((s, it) => s + (it.weight || 1), 0);
+  const getW = (it) => it.id === "aoma" ? (LIVE_CONFIG.aomaWeight ?? 3) : (it.weight || 1);
+  const totalWeight = pool.reduce((s, it) => s + getW(it), 0);
   let roll = Math.random() * totalWeight, chosen = pool[0];
-  for (const it of pool) { roll -= (it.weight || 1); if (roll <= 0) { chosen = it; break; } }
+  for (const it of pool) { roll -= getW(it); if (roll <= 0) { chosen = it; break; } }
   return { type: chosen.id, icon: chosen.icon, color: chosen.color, fallbackText: chosen.fallbackText || "", x: 400 + Math.random() * (MAP_SIZE - 800), y: 400 + Math.random() * (MAP_SIZE - 800), phase: Math.random() * Math.PI * 2 };
 }
 
 function spawnAiFish(idx) {
   const keys = getAllFishConfigs().filter(f => f.cost === 0).map(f => f.id);
-  const topLvl = getHighestPlayerLevel();
-  const roll = Math.random();
+  const topLvl = getHighestPlayerLevel(), roll = Math.random();
   let level = 1, elite = false;
+  if (roll < 0.35) level = Math.max(1, Math.floor(1 + Math.random() * Math.max(5, topLvl * 0.45)));
+  else if (roll < 0.78) level = Math.max(2, Math.floor(topLvl * 0.55 + Math.random() * Math.max(4, topLvl * 0.55)));
+  else { level = Math.min(45, topLvl + 1 + Math.floor(Math.random() * 4)); elite = true; }
 
-  if (roll < 0.35) {
-    level = Math.max(1, Math.floor(1 + Math.random() * Math.max(5, topLvl * 0.45)));
-  } else if (roll < 0.78) {
-    level = Math.max(2, Math.floor(topLvl * 0.55 + Math.random() * Math.max(4, topLvl * 0.55)));
-  } else {
-    level = Math.min(45, topLvl + 1 + Math.floor(Math.random() * 4));
-    elite = true;
-  }
-
-  const maxHp = Math.round((85 + level * 26) * (elite ? 1.45 : 1));
-  const ang = Math.random() * Math.PI * 2;
+  const maxHp = Math.round((85 + level * 26) * (elite ? 1.45 : 1)), ang = Math.random() * Math.PI * 2;
   return {
     id: `ai_${idx}_${Math.random().toString(36).slice(2, 6)}`,
     name: elite ? ["Hải Vương Nhỏ", "Kình Ngư Cổ Đại", "Bá Ngư Tinh Anh"][idx % 3] : ["Cá Hổ", "Cá Đuối", "Kình Ngư", "Hải Ngư", "Cá Mập Nhỏ"][idx % 5],
     species: keys[idx % keys.length], level, tier: getTierFromLevel(level), elite,
     x: 400 + Math.random() * (MAP_SIZE - 800), y: 400 + Math.random() * (MAP_SIZE - 800),
     angle: ang, targetAngle: ang, hp: maxHp, maxHp,
-    dmg: Math.round((12 + level * 4.2) * (elite ? 1.25 : 1)),
-    speed: 135 + Math.random() * 40,
+    dmg: Math.round((12 + level * 4.2) * (elite ? 1.25 : 1)), speed: 135 + Math.random() * 40,
     biteCooldown: 0, poisonTickCd: 0, stunTimer: 0, slowTimer: 0, aiTimer: 1 + Math.random() * 2
   };
 }
@@ -509,17 +552,14 @@ function activateMapItem(item) {
       myFish.hp = Math.min(myFish.hp, getEffectiveStats().maxHp);
       addToast(`💀 MAY RỦI: Tụt xuống Cấp ${myFish.level}!`);
       addFloatingText(myFish.x, myFish.y - 42, "💀 -1 CẤP!", "#f87171", 1.3);
-    } else {
-      addFloatingText(myFish.x, myFish.y - 42, "🍀 Thoát nạn (Cấp 1)!", "#fde047", 1.1);
-    }
+    } else addFloatingText(myFish.x, myFish.y - 42, "🍀 Thoát nạn (Cấp 1)!", "#fde047", 1.1);
   } else if (cfg.id === "aoma") {
     const cands = Object.values(bossesState).filter(b => b?.alive);
     const list = cands.length > 0 ? cands : BOSS_SPAWNS;
     let nearest = list[0], minDist = Infinity;
     list.forEach(b => { const d = Math.hypot(b.x - myFish.x, b.y - myFish.y); if (d < minDist) { minDist = d; nearest = b; } });
     const ang = Math.atan2(nearest.y - myFish.y, nearest.x - myFish.x);
-    const stopOff = Math.min(130, minDist * 0.2);
-    const flyDur = Math.min(1.8, Math.max(0.75, minDist / 2200));
+    const stopOff = Math.min(130, minDist * 0.2), flyDur = Math.min(1.8, Math.max(0.75, minDist / 2200));
     myFish.knockbackFly = {
       startX: myFish.x, startY: myFish.y,
       targetX: Math.max(80, Math.min(MAP_SIZE - 80, nearest.x - Math.cos(ang) * stopOff)),
@@ -536,21 +576,14 @@ function triggerSkillSlot(slotIdx) {
   if (!inGame || !myFish || choosingBuff) return;
   const sk = getFishConfig(myFish.species).skills[slotIdx];
   if (!sk) return;
-
-  if (myFish.level < sk.unlockLevel) {
-    addFloatingText(myFish.x, myFish.y - 36, `🔒 Cần Cấp ${sk.unlockLevel}!`, "#cbd5e1", 0.95);
-    return;
-  }
+  if (myFish.level < sk.unlockLevel) { addFloatingText(myFish.x, myFish.y - 36, `🔒 Cần Cấp ${sk.unlockLevel}!`, "#cbd5e1", 0.95); return; }
   if (myFish.stunTimer > 0 && !(sk.isSpecial && sk.domainRadius)) return;
   if (myFish.skillCooldowns[slotIdx] > 0) return;
 
   const skLv = myFish.skillLevels[slotIdx] || 1;
-  const lvDmgMult = 1 + (skLv - 1) * 0.22;
-  const lvCdMult = Math.max(0.55, 1 - (skLv - 1) * 0.08);
+  const lvDmgMult = 1 + (skLv - 1) * 0.22, lvCdMult = Math.max(0.55, 1 - (skLv - 1) * 0.08);
   myFish.skillCooldowns[slotIdx] = sk.cd * lvCdMult * myFish.skillCdMult;
-
-  const eff = getEffectiveStats();
-  const skillDmg = eff.dmg * myFish.skillDmgMult * lvDmgMult;
+  const eff = getEffectiveStats(), skillDmg = eff.dmg * myFish.skillDmgMult * lvDmgMult;
 
   sk.execute({
     fish: myFish, effStats: eff, skillDmg,
@@ -571,7 +604,7 @@ function triggerSkillSlot(slotIdx) {
 
 // ==================== COMBAT ====================
 function applyDamageToMe(rawDmg, attackerName, stunDuration = 0, onReflectCallback = null) {
-  if (!inGame || !myFish) return false;
+  if (!inGame || !myFish || adminGodMode) return false;
   const spec = getFishSpecialSkill(myFish.species);
   if (myFish.ultTimer > 0 && spec) {
     if (spec.dodgeChance && Math.random() < spec.dodgeChance) { addFloatingText(myFish.x, myFish.y - 34, "💨 Hụt!", "#74c0fc", 1.15); return false; }
@@ -618,23 +651,18 @@ function evaluateBiteHit(bx, by, br, tx, ty, ta, tr) {
 
 function performBite() {
   if (!inGame || !myFish || choosingBuff || myFish.biteCooldown > 0 || myFish.stunTimer > 0 || myFish.knockbackFly) return;
-  const eff = getEffectiveStats();
-  const spec = getFishSpecialSkill(myFish.species);
+  const eff = getEffectiveStats(), spec = getFishSpecialSkill(myFish.species);
 
   if (myFish.ultFinisher?.type === "birdMeteor") {
-    myFish.biteCooldown = 0.20;
-    myFish.chompTimer = 0.16;
+    myFish.biteCooldown = 0.20; myFish.chompTimer = 0.16;
     const dashLen = Math.min(720, Math.max(renderer.logicalW, renderer.logicalH) * 0.65);
     const startX = myFish.x, startY = myFish.y;
     const endX = Math.max(50, Math.min(MAP_SIZE - 50, startX + Math.cos(myFish.angle) * dashLen));
     const endY = Math.max(50, Math.min(MAP_SIZE - 50, startY + Math.sin(myFish.angle) * dashLen));
-    const steps = 6;
     const meteorDmg = myFish.ultFinisher.dmg;
 
-    for (let s = 1; s <= steps; s++) {
-      const px = startX + ((endX - startX) * s) / steps;
-      const py = startY + ((endY - startY) * s) / steps;
-      afterimages.push({ x: px, y: py, angle: myFish.angle, level: myFish.level, tier: myFish.tier, sizeMult: myFish.sizeMult, species: myFish.species, life: 0.3, maxLife: 0.3 });
+    for (let s = 1; s <= 6; s++) {
+      afterimages.push({ x: startX + ((endX - startX) * s) / 6, y: startY + ((endY - startY) * s) / 6, angle: myFish.angle, level: myFish.level, tier: myFish.tier, sizeMult: myFish.sizeMult, species: myFish.species, life: 0.3, maxLife: 0.3 });
     }
     screenSlashes.push({ x: (startX + endX) / 2, y: (startY + endY) / 2, angle: myFish.angle, len: dashLen, life: 0.22, maxLife: 0.22 });
     myFish.x = endX; myFish.y = endY;
@@ -796,13 +824,9 @@ function onLevelReached(newLvl) {
   if (newLvl % 10 === 0 && newLvl <= 40) myFish.skillPoints += 1;
 
   const unlockedSk = getFishConfig(myFish.species).skills.find(s => s.unlockLevel === newLvl);
-  if (unlockedSk) {
-    addToast(`🔓 MỞ KHÓA SKILL MỚI [${SKILL_KEYS[unlockedSk.slot]}]: ${unlockedSk.name}!`);
-  } else if (newTier > oldTier) {
-    addToast(`🌟 TIẾN HÓA DẠNG ${newTier}: ${EVO_TIERS[newTier - 1].name}!`);
-  } else {
-    addToast(`⬆️ Lên Cấp ${newLvl}!`);
-  }
+  if (unlockedSk) addToast(`🔓 MỞ KHÓA SKILL MỚI [${SKILL_KEYS[unlockedSk.slot]}]: ${unlockedSk.name}!`);
+  else if (newTier > oldTier) addToast(`🌟 TIẾN HÓA DẠNG ${newTier}: ${EVO_TIERS[newTier - 1].name}!`);
+  else addToast(`⬆️ Lên Cấp ${newLvl}!`);
 }
 
 function gainExp(amount) {
@@ -810,7 +834,7 @@ function gainExp(amount) {
   const eff = getEffectiveStats(), gained = amount * (eff ? eff.expMult : 1);
   if (!Number.isFinite(gained) || gained <= 0) return;
 
-  myFish.exp += gained; myFish.score += gained;
+  myFish.exp += gained; myFish.score += Math.min(gained, 50000);
   let safety = 0;
   while (myFish.exp >= myFish.expNeed && safety < 15) {
     safety++;
@@ -885,10 +909,18 @@ function updateGame(dt) {
   const eff = getEffectiveStats();
   if (myFish.hp > eff.maxHp) myFish.hp = eff.maxHp;
 
+  // Đồng bộ số lượng Mồi, Cá AI, Item Buff theo LIVE_CONFIG từ Admin Panel
   const ev = getActiveEventConfig();
-  const desiredFood = Math.round(BASE_FOOD_COUNT * (ev?.modifiers?.foodMult || 1));
+  const desiredFood = Math.round((LIVE_CONFIG.foodCount || 3200) * (ev?.modifiers?.foodMult || 1));
   while (foods.length < desiredFood) foods.push(spawnFood());
   if (foods.length > desiredFood + 30) foods.length = desiredFood;
+
+  const desiredAi = Math.max(0, Math.round(LIVE_CONFIG.aiCount || 48));
+  while (aiFishes.length < desiredAi) aiFishes.push(spawnAiFish(aiFishes.length));
+  if (aiFishes.length > desiredAi) aiFishes.length = desiredAi;
+
+  const desiredItems = Math.max(0, Math.round(LIVE_CONFIG.itemCount || 12));
+  if (mapItems.length > desiredItems) mapItems.length = desiredItems;
 
   if (biteHold && myFish.biteCooldown <= 0 && myFish.stunTimer <= 0 && !myFish.knockbackFly) performBite();
 
@@ -918,8 +950,7 @@ function updateGame(dt) {
   }
 
   if (myFish.ultFinisher) {
-    const uf = myFish.ultFinisher;
-    uf.timer -= dt;
+    const uf = myFish.ultFinisher; uf.timer -= dt;
     const viewScale = Math.min(1.0, Math.max(0.56, Math.min(renderer.logicalW, renderer.logicalH) / 760));
     const viewR = (Math.max(renderer.logicalW, renderer.logicalH) / 2) / viewScale;
 
@@ -928,12 +959,7 @@ function updateGame(dt) {
       if (uf.tickCd <= 0) {
         uf.tickCd = 0.2;
         for (let s = 0; s < 5; s++) {
-          screenSlashes.push({
-            x: camera.x + (Math.random() - 0.5) * viewR * 1.8,
-            y: camera.y + (Math.random() - 0.5) * viewR * 1.2,
-            angle: (Math.random() - 0.5) * Math.PI,
-            len: 220 + Math.random() * 260, life: 0.25, maxLife: 0.25
-          });
+          screenSlashes.push({ x: camera.x + (Math.random() - 0.5) * viewR * 1.8, y: camera.y + (Math.random() - 0.5) * viewR * 1.2, angle: (Math.random() - 0.5) * Math.PI, len: 220 + Math.random() * 260, life: 0.25, maxLife: 0.25 });
         }
         dealAoEDamage(camera.x, camera.y, viewR, uf.dmgPerTick);
       }
@@ -953,24 +979,17 @@ function updateGame(dt) {
         if (res) { ai.x = Math.max(80, Math.min(MAP_SIZE - 80, res.nx)); ai.y = Math.max(80, Math.min(MAP_SIZE - 80, res.ny)); }
       });
       Object.values(remotePlayers).forEach(p => {
-        pushOut(p.x, p.y, p.uid, (ang) => {
-          svc.pushPvpHit(p.uid, { fromUid: myFish.uid, fromName: myFish.name, dmg: Math.round(uf.dmg), crit: false, isReflectFx: false, knockbackX: Math.round(Math.cos(ang) * 180), knockbackY: Math.round(Math.sin(ang) * 180) });
-        });
+        pushOut(p.x, p.y, p.uid, (ang) => svc.pushPvpHit(p.uid, { fromUid: myFish.uid, fromName: myFish.name, dmg: Math.round(uf.dmg), crit: false, isReflectFx: false, knockbackX: Math.round(Math.cos(ang) * 180), knockbackY: Math.round(Math.sin(ang) * 180) }));
       });
-      Object.values(bossesState).forEach(b => {
-        if (b?.alive) pushOut(b.x, b.y, b.id, () => damageBoss(b.id, uf.dmg, false, b.x, b.y - 50));
-      });
+      Object.values(bossesState).forEach(b => { if (b?.alive) pushOut(b.x, b.y, b.id, () => damageBoss(b.id, uf.dmg, false, b.x, b.y - 50)); });
     } else if (uf.type === "kingJudgement") {
       uf.tickCd -= dt;
       if (uf.tickCd <= 0) {
-        uf.tickCd = 0.45;
-        let totalDealt = 0;
+        uf.tickCd = 0.45; let totalDealt = 0;
         aiFishes.forEach(ai => {
           if (Math.hypot(ai.x - myFish.x, ai.y - myFish.y) <= viewR) {
-            ai.slowTimer = 1.5;
-            judgmentPillars.push({ x: ai.x, y: ai.y, life: 0.35, maxLife: 0.35 });
-            damageAiFish(ai, uf.dmgPerTick, false, ai.x, ai.y);
-            totalDealt += uf.dmgPerTick;
+            ai.slowTimer = 1.5; judgmentPillars.push({ x: ai.x, y: ai.y, life: 0.35, maxLife: 0.35 });
+            damageAiFish(ai, uf.dmgPerTick, false, ai.x, ai.y); totalDealt += uf.dmgPerTick;
           }
         });
         Object.values(remotePlayers).forEach(p => {
@@ -983,8 +1002,7 @@ function updateGame(dt) {
         Object.values(bossesState).forEach(b => {
           if (b?.alive && Math.hypot(b.x - myFish.x, b.y - myFish.y) <= viewR) {
             judgmentPillars.push({ x: b.x, y: b.y, life: 0.35, maxLife: 0.35 });
-            damageBoss(b.id, uf.dmgPerTick, false, b.x, b.y - 50);
-            totalDealt += uf.dmgPerTick;
+            damageBoss(b.id, uf.dmgPerTick, false, b.x, b.y - 50); totalDealt += uf.dmgPerTick;
           }
         });
         if (totalDealt > 0 && myFish.hp < eff.maxHp) {
@@ -1016,8 +1034,7 @@ function updateGame(dt) {
     g.timer -= dt; if (g.hitCd > 0) g.hitCd -= dt;
     if (g.timer <= 0) { myFish.kingGuards.splice(i, 1); continue; }
     if (g.hitCd <= 0) {
-      const gx = myFish.x + Math.cos(tNow * 3.5 + g.angleOffset) * 125;
-      const gy = myFish.y + Math.sin(tNow * 3.5 + g.angleOffset) * 125;
+      const gx = myFish.x + Math.cos(tNow * 3.5 + g.angleOffset) * 125, gy = myFish.y + Math.sin(tNow * 3.5 + g.angleOffset) * 125;
       let attacked = false;
       for (const ai of aiFishes) {
         if (Math.hypot(ai.x - gx, ai.y - gy) < 90) { damageAiFish(ai, g.dmg, false, ai.x, ai.y); g.hitCd = 0.55; attacked = true; break; }
@@ -1075,7 +1092,8 @@ function updateGame(dt) {
     const it = mapItems[i];
     if (Math.hypot(it.x - myFish.x, it.y - myFish.y) < myR + 22) {
       activateMapItem(it); mapItems.splice(i, 1);
-      setTimeout(() => { if (inGame && mapItems.length < MAP_ITEM_COUNT) mapItems.push(spawnMapItem()); }, MAP_ITEM_RESPAWN_MS);
+      const respawnMs = (LIVE_CONFIG.itemRespawnSec || 10) * 1000;
+      setTimeout(() => { if (inGame && mapItems.length < (LIVE_CONFIG.itemCount || 12)) mapItems.push(spawnMapItem()); }, respawnMs);
     }
   }
 
@@ -1084,8 +1102,7 @@ function updateGame(dt) {
   for (let i = projectiles.length - 1; i >= 0; i--) {
     const pr = projectiles[i];
     pr.x += pr.vx * dt; pr.y += pr.vy * dt; pr.life -= dt;
-    let stop = false;
-    const pRad = pr.radius || 14;
+    let stop = false; const pRad = pr.radius || 14;
     aiFishes.forEach(ai => {
       if (stop || (pr.hitIds && pr.hitIds.has(ai.id))) return;
       if (Math.hypot(ai.x - pr.x, ai.y - pr.y) < getFishRadius(ai.level, ai.tier, 1) + pRad) {
@@ -1108,8 +1125,7 @@ function updateGame(dt) {
   }
 
   const domRadius = myFish.ultTimer > 0 ? (specCfg?.domainRadius || 0) : 0;
-  const domKeep = 1 - (specCfg?.domainDebuff || 0.4);
-  const wallMargin = 280;
+  const domKeep = 1 - (specCfg?.domainDebuff || 0.4), wallMargin = 280;
 
   aiFishes.forEach(ai => {
     if (ai.biteCooldown > 0) ai.biteCooldown -= dt;
@@ -1136,14 +1152,12 @@ function updateGame(dt) {
     }
 
     if (ai.poisonTickCd <= 0 && poisonClouds.some(pc => Math.hypot(pc.x - ai.x, pc.y - ai.y) <= pc.radius + 16)) {
-      ai.poisonTickCd = 0.5;
-      damageAiFish(ai, Math.max(8, eff.dmg * 0.45), false, ai.x, ai.y);
+      ai.poisonTickCd = 0.5; damageAiFish(ai, Math.max(8, eff.dmg * 0.45), false, ai.x, ai.y);
     }
 
     if (ai.stunTimer <= 0 && Math.hypot(ai.x - myFish.x, ai.y - myFish.y) < myR + getFishRadius(ai.level, ai.tier, 1) && ai.biteCooldown <= 0) {
       ai.biteCooldown = 0.75;
-      const raw = ai.dmg * (ai.suppressed ? domKeep : 1);
-      applyDamageToMe(raw, ai.name, 0, (refDmg) => {
+      applyDamageToMe(ai.dmg * (ai.suppressed ? domKeep : 1), ai.name, 0, (refDmg) => {
         reflectEffects.push({ x: ai.x, y: ai.y, life: 0.35, maxLife: 0.35 });
         damageAiFish(ai, refDmg, false, ai.x, ai.y);
       });
@@ -1230,25 +1244,15 @@ function updateHUD(eff) {
   document.getElementById("hud-exp-text").textContent = `EXP: ${Math.floor(myFish.exp)} / ${myFish.expNeed}`;
 
   const spBanner = document.getElementById("skill-points-banner");
-  if (myFish.skillPoints > 0) {
-    document.getElementById("sp-count").textContent = myFish.skillPoints;
-    spBanner.classList.remove("hidden");
-  } else spBanner.classList.add("hidden");
+  if (myFish.skillPoints > 0) { document.getElementById("sp-count").textContent = myFish.skillPoints; spBanner.classList.remove("hidden"); }
+  else spBanner.classList.add("hidden");
 
   const skills = getFishConfig(myFish.species).skills;
   skills.forEach((sk, idx) => {
-    const unlocked = myFish.level >= sk.unlockLevel;
-    const cd = myFish.skillCooldowns[idx];
-    const skLv = myFish.skillLevels[idx];
-    const isSpecActive = sk.isSpecial && myFish.ultTimer > 0;
-    const isFinActive = sk.isUltimate && !!myFish.ultFinisher;
-
-    const pcEl = document.getElementById(`pc-sk-${idx}`);
-    const ovEl = document.getElementById(`pc-sk-ov-${idx}`);
-    const lvEl = document.getElementById(`pc-sk-lv-${idx}`);
-    const upgBtn = document.getElementById(`upg-sk-${idx}`);
-    const mobEl = document.getElementById(`mob-sk-${idx}`);
-    const mobCd = document.getElementById(`mob-sk-cd-${idx}`);
+    const unlocked = myFish.level >= sk.unlockLevel, cd = myFish.skillCooldowns[idx], skLv = myFish.skillLevels[idx];
+    const isSpecActive = sk.isSpecial && myFish.ultTimer > 0, isFinActive = sk.isUltimate && !!myFish.ultFinisher;
+    const pcEl = document.getElementById(`pc-sk-${idx}`), ovEl = document.getElementById(`pc-sk-ov-${idx}`), lvEl = document.getElementById(`pc-sk-lv-${idx}`);
+    const upgBtn = document.getElementById(`upg-sk-${idx}`), mobEl = document.getElementById(`mob-sk-${idx}`), mobCd = document.getElementById(`mob-sk-cd-${idx}`);
 
     if (lvEl) lvEl.textContent = unlocked ? `Lv.${skLv}/${MAX_SKILL_LEVEL}` : `Cấp ${sk.unlockLevel}`;
     if (upgBtn) upgBtn.classList.toggle("hidden", !(unlocked && myFish.skillPoints > 0 && skLv < MAX_SKILL_LEVEL));
@@ -1262,7 +1266,6 @@ function updateHUD(eff) {
       else if (cd > 0) { ovEl.style.opacity = "1"; ovEl.style.background = "rgba(0,0,0,0.75)"; ovEl.textContent = `${cd.toFixed(1)}s`; }
       else { ovEl.style.opacity = "0"; }
     }
-
     if (mobEl && mobCd) {
       mobEl.classList.toggle("locked", !unlocked);
       if (!unlocked) { mobCd.style.opacity = "1"; mobCd.textContent = `🔒${sk.unlockLevel}`; }
@@ -1280,11 +1283,11 @@ function updateHUD(eff) {
   const all = [myFish, ...Object.values(remotePlayers)].filter(Boolean).sort((a, b) => (b.score || 0) - (a.score || 0));
   document.getElementById("ingame-leaderboard").innerHTML = all.slice(0, 5).map((p, i) => `<div class="lb-row ${p.uid === myFish.uid ? "me" : ""}"><span>${i === 0 ? "👑" : `${i + 1}.`} ${escapeHtml(p.name)}</span><span>${Math.round(p.score || 0)}</span></div>`).join("");
 
-  document.getElementById("boss-status-list").innerHTML = BOSS_SPAWNS.map((sp, i) => {
-    const b = bossesState[sp.id];
-    if (!b) return `<div class="boss-row"><span>Boss ${i + 1}</span><span>...</span></div>`;
-    if (b.alive) return `<div class="boss-row"><span>👹 ${sp.name}</span><span>${Math.round(b.hp)} HP</span></div>`;
-    return `<div class="boss-row respawning"><span>⏳ ${sp.name}</span><span>${Math.max(0, Math.ceil((b.respawnAt - Date.now()) / 1000))}s</span></div>`;
+  // Hiển thị toàn bộ Boss mặc định + Boss do Admin triệu hồi thêm
+  const allBosses = Object.values(bossesState).filter(Boolean);
+  document.getElementById("boss-status-list").innerHTML = allBosses.map((b) => {
+    if (b.alive) return `<div class="boss-row"><span>👹 ${escapeHtml(b.name)}</span><span>${Math.round(b.hp)} HP</span></div>`;
+    return `<div class="boss-row respawning"><span>⏳ ${escapeHtml(b.name)}</span><span>${Math.max(0, Math.ceil((b.respawnAt - Date.now()) / 1000))}s</span></div>`;
   }).join("");
 
   const evBanner = document.getElementById("event-banner"), ev = getActiveEventConfig();
@@ -1302,29 +1305,23 @@ document.getElementById("btn-revive-match").addEventListener("click", reviveInMa
 
 document.getElementById("btn-back-lobby").addEventListener("click", async () => {
   document.getElementById("death-modal").classList.add("hidden");
-  if (awaitingRevive) {
-    awaitingRevive = false;
-    await finalizeMatchDataAndLeave();
-  }
-  await renderLobby();
-  showScreen("lobby");
+  if (awaitingRevive) { awaitingRevive = false; await finalizeMatchDataAndLeave(); }
+  await renderLobby(); showScreen("lobby");
 });
 
 function handlePlayerDeath(reason) {
   if (!inGame || !myFish) return;
+  const revCost = LIVE_CONFIG.reviveCost ?? 100;
 
   if (!myFish.hasRevived) {
-    inGame = false;
-    awaitingRevive = true;
-    biteHold = false;
-    input.resetJoystick();
+    inGame = false; awaitingRevive = true; biteHold = false; input.resetJoystick();
     cancelAnimationFrame(animFrameId);
     if (syncIntervalId) clearInterval(syncIntervalId);
 
     const score = Math.round(myFish.score);
-    const estCoins = sessionStats.coinsEarned + Math.floor(score / 150);
+    const estCoins = sessionStats.coinsEarned + Math.min(300, Math.floor(myFish.level * 5));
     const nextLvl = Math.max(1, Math.floor(myFish.level * 0.5));
-    const canAfford = (userData.coins || 0) >= REVIVE_COST;
+    const canAfford = (userData.coins || 0) >= revCost;
 
     document.getElementById("death-title").textContent = "💀 BẠN ĐÃ TỬ VONG!";
     document.getElementById("death-summary").innerHTML = `
@@ -1333,55 +1330,39 @@ function handlePlayerDeath(reason) {
       <div>Cá đã nuốt: <b>${sessionStats.fishKilled}</b> • Mồi đã ăn: <b>${sessionStats.foodEaten}</b></div>
       <div>Coin thưởng nếu về sảnh: <b style="color:#ffd43b">+${estCoins} Coin</b></div>
     `;
-
     const reviveBtn = document.getElementById("btn-revive-match");
-    const reviveNote = document.getElementById("revive-note");
     reviveBtn.classList.remove("hidden");
     reviveBtn.disabled = !canAfford;
-    reviveBtn.textContent = canAfford
-      ? `🔄 Hồi Sinh (🪙 ${REVIVE_COST} Coin • Về Cấp ${nextLvl} • Vô địch 5s)`
-      : `🔄 Không đủ ${REVIVE_COST} Coin (Hiện có: ${userData.coins || 0} Coin)`;
-    reviveNote.textContent = "Mỗi trận đấu chỉ được hồi sinh 1 lần duy nhất.";
-
+    reviveBtn.textContent = canAfford ? `🔄 Hồi Sinh (🪙 ${revCost} Coin • Về Cấp ${nextLvl} • Vô địch 5s)` : `🔄 Không đủ ${revCost} Coin (Hiện có: ${userData.coins || 0} Coin)`;
+    document.getElementById("revive-note").textContent = "Mỗi trận đấu chỉ được hồi sinh 1 lần duy nhất.";
     document.getElementById("death-modal").classList.remove("hidden");
     return;
   }
-
   finishMatch(true, reason);
 }
 
 async function reviveInMatch() {
+  const revCost = LIVE_CONFIG.reviveCost ?? 100;
   if (!awaitingRevive || !myFish || myFish.hasRevived) return;
-  if ((userData.coins || 0) < REVIVE_COST) return alert(`Bạn cần ${REVIVE_COST} Coin để hồi sinh!`);
+  if ((userData.coins || 0) < revCost) return alert(`Bạn cần ${revCost} Coin để hồi sinh!`);
 
-  userData.coins -= REVIVE_COST;
+  userData.coins -= revCost;
   await svc.saveUserProfile(currentUser.uid, userData);
 
-  const oldLevel = myFish.level;
-  const newLevel = Math.max(1, Math.floor(oldLevel * 0.5));
-  const lostLevels = oldLevel - newLevel;
-
-  myFish.hasRevived = true;
-  myFish.level = newLevel;
-  myFish.tier = getTierFromLevel(newLevel);
-  myFish.exp = 0;
-  myFish.expNeed = calcExpNeedForLevel(newLevel);
+  const oldLevel = myFish.level, newLevel = Math.max(1, Math.floor(oldLevel * 0.5)), lostLevels = oldLevel - newLevel;
+  myFish.hasRevived = true; myFish.level = newLevel; myFish.tier = getTierFromLevel(newLevel);
+  myFish.exp = 0; myFish.expNeed = calcExpNeedForLevel(newLevel);
   myFish.baseMaxHp = Math.max(100, myFish.baseMaxHp - lostLevels * 20);
   myFish.baseDmg = Math.max(15, myFish.baseDmg - lostLevels * 3);
-  myFish.stunTimer = 0;
-  myFish.knockbackFly = null;
-  myFish.ultFinisher = null;
+  myFish.stunTimer = 0; myFish.knockbackFly = null; myFish.ultFinisher = null;
 
-  myFish.shieldTimer = Math.max(myFish.shieldTimer, REVIVE_INVULN_SEC);
-  myFish.reviveInvulnTimer = REVIVE_INVULN_SEC;
+  myFish.shieldTimer = Math.max(myFish.shieldTimer, 5.0);
+  myFish.reviveInvulnTimer = 5.0;
   myFish.hp = getEffectiveStats().maxHp;
 
   awaitingRevive = false;
   document.getElementById("death-modal").classList.add("hidden");
-
-  inGame = true;
-  startRoomSync();
-  lastTime = performance.now();
+  inGame = true; startRoomSync(); lastTime = performance.now();
   animFrameId = requestAnimationFrame(gameLoop);
 
   addToast(`✨ HỒI SINH THÀNH CÔNG! (Cấp ${oldLevel} → Cấp ${newLevel} • Vô địch 5s)`);
@@ -1395,7 +1376,8 @@ async function finalizeMatchDataAndLeave() {
   await ensureDailyQuestReset(false);
 
   const score = myFish ? Math.round(myFish.score) : 0;
-  const totalCoins = sessionStats.coinsEarned + Math.floor(score / 150);
+  const levelBonusCoins = myFish ? Math.min(300, Math.floor(myFish.level * 5)) : 0;
+  const totalCoins = sessionStats.coinsEarned + levelBonusCoins;
   userData.coins += totalCoins;
   userData.bestScore = Math.max(userData.bestScore || 0, score);
   userData.quests.foodEaten += sessionStats.foodEaten;
@@ -1423,12 +1405,9 @@ async function finishMatch(isDead, reason) {
     document.getElementById("btn-revive-match").classList.add("hidden");
     document.getElementById("revive-note").textContent = "Bạn đã sử dụng hết lượt hồi sinh trong trận này.";
     document.getElementById("death-modal").classList.remove("hidden");
-  } else {
-    await renderLobby();
-    showScreen("lobby");
-  }
+  } else { await renderLobby(); showScreen("lobby"); }
 }
 
 function addFloatingText(x, y, text, color, scale = 1) { floatingTexts.push({ x, y, text, color, scale, life: 1.0 }); }
-function addToast(msg) { const d = document.createElement("div"); d.className = "toast"; d.textContent = msg; document.getElementById("toast-container").appendChild(d); setTimeout(() => d.remove(), 3500); }
+function addToast(msg, dur = 3500) { const d = document.createElement("div"); d.className = "toast"; d.textContent = msg; document.getElementById("toast-container").appendChild(d); setTimeout(() => d.remove(), dur); }
 function escapeHtml(str) { return String(str).replace(/[&<>"']/g, s => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[s])); }

@@ -32,9 +32,11 @@
         </div>
       </div>
       <div class="header-right">
+        <button id="btn-open-admin-lobby" class="btn-admin hidden" type="button">🛠️ Admin</button>
         <div class="coin-box">🪙 <span id="lobby-coins">0</span> Coin</div>
         <button id="btn-logout" class="btn-outline">Đăng xuất</button>
       </div>
+
     </div>
 
     <div class="lobby-grid">
@@ -76,9 +78,12 @@
 
     <!-- GÓC TRÊN TRÁI: NÚT 3 GẠCH + MINIMAP -->
     <div class="hud-top-left">
-      <button id="btn-menu-exit" class="btn-hamburger" title="Menu / Thoát ván đấu">
-        <span></span><span></span><span></span>
-      </button>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        <button id="btn-menu-exit" class="btn-hamburger" title="Menu / Thoát ván đấu">
+          <span></span><span></span><span></span>
+        </button>
+        <button id="btn-open-admin-game" class="btn-admin-mini hidden" type="button" title="Mở Admin Panel">🛠️</button>
+      </div>
       <div class="minimap-wrap">
         <canvas id="minimap-canvas" width="150" height="150"></canvas>
         <div class="minimap-legend">
@@ -195,6 +200,9 @@
       </form>
     </div>
   </div>
+  
+ <!-- ADMIN PANEL MODAL -->
+  <div id="admin-modal" class="modal hidden"></div>
 
   <script type="module" src="js/main.js"></script>
 </body>

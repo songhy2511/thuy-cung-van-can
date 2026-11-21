@@ -1263,3 +1263,133 @@ body, html {
 .btn-revive.hidden {
   display: none;
 }
+
+/* ===== ADMIN PANEL ===== */
+.btn-admin {
+  background: linear-gradient(90deg, #9333ea, #ec4899);
+  border: 1.5px solid #f5d0fe;
+  color: #fff;
+  padding: 7px 14px;
+  border-radius: 99px;
+  font-weight: 900;
+  font-size: 13px;
+  cursor: pointer;
+}
+.btn-admin.hidden, .btn-admin-mini.hidden { display: none; }
+.btn-admin-mini {
+  width: 40px;
+  height: 36px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #9333ea, #db2777);
+  border: 2px solid #f5d0fe;
+  color: #fff;
+  font-size: 17px;
+  cursor: pointer;
+}
+
+.admin-box {
+  max-width: 680px;
+  width: 95%;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+  padding: 18px;
+}
+.admin-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.admin-top h2 { font-size: 18px; color: #f5d0fe; }
+
+.admin-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.admin-tab {
+  background: #0b2d4d;
+  border: 1px solid #2b7bb0;
+  color: #cde9ff;
+  padding: 7px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.admin-tab.active {
+  background: linear-gradient(90deg, #9333ea, #db2777);
+  border-color: #f5d0fe;
+  color: #fff;
+}
+
+.admin-body {
+  overflow-y: auto;
+  flex: 1;
+  padding-right: 4px;
+}
+.admin-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+@media (max-width: 640px) {
+  .admin-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+.admin-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: #bae6fd;
+  font-weight: 700;
+}
+.admin-field input, .admin-select, .admin-text-input {
+  background: #0a243d;
+  border: 1px solid #3595d6;
+  color: #fff;
+  padding: 7px 9px;
+  border-radius: 8px;
+  font-size: 13px;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.admin-text-input { flex: 1; }
+.admin-footer-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+.admin-section {
+  background: rgba(11, 41, 68, 0.7);
+  border: 1px solid #205780;
+  border-radius: 12px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+.admin-section h4 { color: #ffd43b; margin-bottom: 8px; font-size: 13px; }
+.admin-row-btns { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+.admin-user-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.admin-user-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  background: rgba(4, 20, 38, 0.75);
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+.au-sub { font-size: 11px; color: #9ec9e6; }
+.au-btns { display: flex; gap: 6px; }

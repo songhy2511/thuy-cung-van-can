@@ -1,27 +1,47 @@
 export const MAP_SIZE = 9600;
-export const BASE_FOOD_COUNT = 3200;   // Tăng x2 mật độ mồi (1600 -> 3200)
-export const AI_FISH_COUNT = 48;
-export const MAP_ITEM_COUNT = 12;
-export const MAP_ITEM_RESPAWN_MS = 10000;
-export const MAP_ITEM_DURATION = 15;
-
-export const BOSS_RESPAWN_MS = 60000;
-export const EVENT_DURATION_MS = 30000;
-export const EVENT_INTERVAL_MS = 120000;
 export const DOMAIN_RADIUS = 340;
-
 export const BOSS_VISION_RADIUS = 620;
 export const BOSS_RANGED_RANGE = 500;
 export const BOSS_VORTEX_RADIUS = 230;
+export const MAP_ITEM_DURATION = 15;
+export const EVENT_INTERVAL_MS = 120000;
 
 export const MAX_UPGRADE_LEVEL = 10;
 export const MAX_SKILL_LEVEL = 5;
-export const REVIVE_COST = 100;         // Giá hồi sinh: 100 Coin
-export const REVIVE_INVULN_SEC = 5.0;   // Vô địch 5 giây sau khi hồi sinh
 export const SKILL_UNLOCK_LEVELS = [1, 10, 20, 30, 40];
 export const SKILL_KEYS = ["SPACE", "Q", "W", "E", "R"];
 
-// Công thức EXP tăng +50% mỗi cấp (dùng chung cho cá & thưởng cá AI/Boss)
+// Danh sách UID Admin (đã điền sẵn UID của bạn từ ảnh Firebase)
+export const ADMIN_UIDS = [
+  "uWcSrg5ZtmhBpBZ24Us13tr8dp82"
+];
+
+// Cấu hình mặc định (sẽ bị ghi đè tự động theo dữ liệu lưu trong Firebase config/global)
+export const DEFAULT_SERVER_CONFIG = {
+  foodCount: 3200,
+  itemCount: 12,
+  itemRespawnSec: 10,
+  aomaWeight: 3,
+  aiCount: 48,
+  bossHpBase: 650,
+  bossHpPerLevel: 75,
+  bossDmgBase: 24,
+  bossDmgPerLevel: 3.2,
+  bossSpeed: 11.5,
+  bossRespawnSec: 60,
+  expGlobalMult: 1.0,
+  reviveCost: 100,
+  kingFishCost: 100,
+  eventDurationSec: 30
+};
+
+// Object cấu hình sống (tự cập nhật thời gian thực cho toàn bộ game khi Admin chỉnh sửa)
+export const LIVE_CONFIG = { ...DEFAULT_SERVER_CONFIG };
+
+export function applyServerConfig(data) {
+  Object.assign(LIVE_CONFIG, DEFAULT_SERVER_CONFIG, data || {});
+}
+
 export function calcExpNeedForLevel(level) {
   return Math.max(50, Math.round(50 * Math.pow(1.5, Math.max(0, level - 1))));
 }
