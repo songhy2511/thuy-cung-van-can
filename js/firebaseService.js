@@ -74,36 +74,31 @@ export function sendChatMessage(uid, name, text) {
 // ==================== ROOM & WORLD SYNC ====================
 let roomUnsubs = [];
 
-function createInitialBossData(sp, idx, bossTier) {
-  const maxHp = 600 + bossTier * 450;
+function createInitialBossData(sp, idx, bossLevel, minutesElapsed = 0) {
+  const bossTier = Math.min(5, Math.max(2, 1 + Math.floor(bossLevel / 10)));
+  const hpTimeMult = 1 + minutesElapsed * 0.18;  // Boss tăng +18% máu mỗi phút
+  const dmgTimeMult = 1 + minutesElapsed * 0.12; // Boss tăng +12% sát thương mỗi phút
+  const maxHp = Math.round((900 + bossLevel * 125) * hpTimeMult);
+  const dmg = Math.round((65 + bossLevel * 12) * dmgTimeMult);
+
   return {
-    id: sp.id, name: sp.name, alive: true, tier: bossTier, level: bossTier * 5,
+    id: sp.id, name: sp.name, alive: true, tier: bossTier, level: bossLevel,
     x: sp.x, y: sp.y, homeX: sp.x, homeY: sp.y, angle: idx * 2,
-    hp: maxHp, maxHp, dmg: 50 + bossTier * 50, respawnAt: 0, lastHitBy: "",
-    // Trạng thái AI & Skill mới của Boss
-    chaseStartedAt: 0,
-    lastDealtDmgAt: 0,
-    combatStartedAt: 0,
-    lastSeenPlayerAt: 0,
-    hungryUntil: 0,
-    vortexStartedAt: 0,
-    vortexUntil: 0,
-    vortexCdUntil: 0,
-    absUntil: 0,
-    absCdUntil: 0,
-    lungeUntil: 0,
-    lungeCdUntil: 0,
-    rangedCdUntil: 0,
-    rangedStrike: null
+    hp: maxHp, maxHp, dmg, respawnAt: 0, lastHitBy: "",
+    chaseStartedAt: 0, lastDealtDmgAt: 0, combatStartedAt: 0, lastSeenPlayerAt: 0,
+    hungryUntil: 0, vortexStartedAt: 0, vortexUntil: 0, vortexCdUntil: 0,
+    absUntil: 0, absCdUntil: 0, lungeUntil: 0, lungeCdUntil: 0,
+    rangedCdUntil: 0, rangedStrike: null
   };
 }
 
 export async function resetWorldMap() {
+  const now = Date.now();
   const bossesInit = {};
   BOSS_SPAWNS.forEach((sp, idx) => {
-    bossesInit[sp.id] = createInitialBossData(sp, idx, 2);
+    bossesInit[sp.id] = createInitialBossData(sp, idx, 10, 0);
   });
-  const now = Date.now();
+  await set(ref(db, "rooms/main/meta"), { startedAt: now });
   await set(ref(db, "rooms/main/bosses"), bossesInit);
   await set(ref(db, "rooms/main/event"), {
     active: false, type: "", startedAt: 0, endsAt: 0, nextEventAt: now + 60000
@@ -155,6 +150,10 @@ export async function joinGameRoom(uid, callbacks) {
 
   roomUnsubs.push(onValue(ref(db, "rooms/main/event"), (snap) => {
     callbacks.onEventChange(snap.val());
+  }));
+
+  roomUnsubs.push(onValue(ref(db, "rooms/main/meta"), (snap) => {
+    if (callbacks.onMetaChange) callbacks.onMetaChange(snap.val() || { startedAt: Date.now() });
   }));
 }
 
@@ -217,34 +216,27 @@ export function runBossDamageTransaction(bossId, uid, dmg, bossMeta, onResult) {
   });
 }
 
-export function hostUpdateWorld(bossesState, eventState, allPlayers, highestTier) {
+export function hostUpdateWorld(bossesState, eventState, allPlayers, highestTier, highestLevel = 10, roomStartedAt = Date.now()) {
   const now = Date.now();
+  const minutesElapsed = Math.max(0, (now - (roomStartedAt || now)) / 60000);
+  const desiredBossLevel = Math.max(10, Math.round(highestLevel + 2 + minutesElapsed * 0.6));
 
   BOSS_SPAWNS.forEach((sp, idx) => {
     const b = bossesState[sp.id];
     if (!b) return;
-    const desiredTier = Math.min(6, highestTier + 1);
-
     if (!b.alive) {
       if (b.respawnAt && now >= b.respawnAt) {
-        set(ref(db, `rooms/main/bosses/${sp.id}`), createInitialBossData(sp, idx, desiredTier));
+        set(ref(db, `rooms/main/bosses/${sp.id}`), createInitialBossData(sp, idx, desiredBossLevel, minutesElapsed));
       }
       return;
     }
-
-    // Tìm người chơi trong phạm vi tầm nhìn của Boss
-    let target = null, minDist = BOSS_VISION_RADIUS;
-    allPlayers.forEach(p => {
-      const d = Math.hypot(p.x - b.x, p.y - b.y);
-      if (d < minDist) { minDist = d; target = p; }
-    });
-
-    const isHungry = (b.hungryUntil || 0) > now;
-    const isAbs = (b.absUntil || 0) > now;
-    const isLunging = isAbs && (b.lungeUntil || 0) > now;
-    const hungryMult = isHungry ? 1.5 : 1.0;
-
-    const patch = { tier: Math.max(b.tier, desiredTier) };
+    const desiredTier = Math.min(5, Math.max(2, 1 + Math.floor(desiredBossLevel / 10)));
+    const scaledDmg = Math.round((65 + Math.max(b.level || 10, desiredBossLevel) * 12) * (1 + minutesElapsed * 0.12));
+    const patch = {
+      tier: Math.max(b.tier || 2, desiredTier),
+      level: Math.max(b.level || 10, desiredBossLevel),
+      dmg: Math.max(b.dmg || 150, scaledDmg)
+    };
 
     if (target) {
       patch.lastSeenPlayerAt = now;

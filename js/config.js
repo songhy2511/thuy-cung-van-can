@@ -1,13 +1,13 @@
-export const MAP_SIZE = 9600;          // Rộng x3 (3200 -> 9600)
-export const BASE_FOOD_COUNT = 1600;   // Mật độ mồi tương xứng map lớn
-export const AI_FISH_COUNT = 45;       // Số lượng cá AI trên map
-export const MAP_ITEM_COUNT = 12;      // Giảm mật độ item buff rải rác
-export const MAP_ITEM_RESPAWN_MS = 10000; // Hồi lại item sau 10 giây kể từ khi bị ăn
-export const MAP_ITEM_DURATION = 15;   // Hiệu lực buff tạm thời (15 giây)
+export const MAP_SIZE = 9600;
+export const BASE_FOOD_COUNT = 3200;   // Tăng x2 mật độ mồi (1600 -> 3200)
+export const AI_FISH_COUNT = 48;
+export const MAP_ITEM_COUNT = 12;
+export const MAP_ITEM_RESPAWN_MS = 10000;
+export const MAP_ITEM_DURATION = 15;
 
-export const BOSS_RESPAWN_MS = 60000;   // 1 phút
-export const EVENT_DURATION_MS = 30000; // Sự kiện kéo dài 30 giây
-export const EVENT_INTERVAL_MS = 120000;// Mỗi 2 phút 1 lần
+export const BOSS_RESPAWN_MS = 60000;
+export const EVENT_DURATION_MS = 30000;
+export const EVENT_INTERVAL_MS = 120000;
 export const DOMAIN_RADIUS = 340;
 
 export const BOSS_VISION_RADIUS = 620;
@@ -15,6 +15,14 @@ export const BOSS_RANGED_RANGE = 500;
 export const BOSS_VORTEX_RADIUS = 230;
 
 export const MAX_UPGRADE_LEVEL = 10;
+export const MAX_SKILL_LEVEL = 5;
+export const SKILL_UNLOCK_LEVELS = [1, 10, 20, 30, 40];
+export const SKILL_KEYS = ["SPACE", "Q", "W", "E", "R"];
+
+// Công thức EXP tăng +50% mỗi cấp (dùng chung cho cá & thưởng cá AI/Boss)
+export function calcExpNeedForLevel(level) {
+  return Math.max(50, Math.round(50 * Math.pow(1.5, Math.max(0, level - 1))));
+}
 
 export const EVO_TIERS = [
   { tier: 1, name: "Cá Con Tập Sự", baseRadius: 22 },
@@ -31,11 +39,12 @@ export const BOSS_SPAWNS = [
 ];
 
 export const UPGRADE_DEFS = [
-  { key: "hp",       name: "Máu Khởi Đầu",    bonusText: "+20 HP / cấp",           baseCost: 100, stepCost: 80, maxLevel: MAX_UPGRADE_LEVEL },
-  { key: "speed",    name: "Tốc Độ Bơi",      bonusText: "+2% Tốc độ / cấp",       baseCost: 100, stepCost: 80, maxLevel: MAX_UPGRADE_LEVEL },
-  { key: "dmg",      name: "Sức Cắn",         bonusText: "+5 Sát thương / cấp",    baseCost: 100, stepCost: 80, maxLevel: MAX_UPGRADE_LEVEL },
-  { key: "eatRange", name: "Hút Thức Ăn",     bonusText: "+5% Tầm hút / cấp",      baseCost: 100, stepCost: 80, maxLevel: MAX_UPGRADE_LEVEL },
-  { key: "defense",  name: "Giảm Sát Thương", bonusText: "+1% Giảm ST nhận / cấp", baseCost: 100, stepCost: 80, maxLevel: MAX_UPGRADE_LEVEL }
+  { key: "hp",         name: "Máu Khởi Đầu",    bonusText: "+20 HP / cấp",            baseCost: 100, stepCost: 80, maxLevel: MAX_UPGRADE_LEVEL },
+  { key: "speed",      name: "Tốc Độ Bơi",      bonusText: "+2% Tốc độ / cấp",        baseCost: 100, stepCost: 80, maxLevel: MAX_UPGRADE_LEVEL },
+  { key: "dmg",        name: "Sức Cắn",         bonusText: "+5 Sát thương / cấp",     baseCost: 100, stepCost: 80, maxLevel: MAX_UPGRADE_LEVEL },
+  { key: "eatRange",   name: "Hút Thức Ăn",     bonusText: "+5% Tầm hút / cấp",       baseCost: 100, stepCost: 80, maxLevel: MAX_UPGRADE_LEVEL },
+  { key: "defense",    name: "Giảm Sát Thương", bonusText: "+1% Giảm ST nhận / cấp",  baseCost: 100, stepCost: 80, maxLevel: MAX_UPGRADE_LEVEL },
+  { key: "skillPower", name: "Sức Mạnh Skill",  bonusText: "+5% ST Kỹ năng / cấp",    baseCost: 120, stepCost: 90, maxLevel: MAX_UPGRADE_LEVEL }
 ];
 
 export const QUEST_TEMPLATES = [

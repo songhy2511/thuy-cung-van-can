@@ -58,6 +58,16 @@ export class GameRenderer {
       ironman: loadOptionalImage(["./Data/Images/item-ironman.png", "./Data/Images/item-ironman.webp"])
     };
 
+    this.skillImgs = {
+      swordWave: loadOptionalImage(["./Data/Images/skill-sword-wave.png", "./Data/Images/skill-sword-wave.webp"]),
+      swordStorm: loadOptionalImage(["./Data/Images/skill-sword-storm.png", "./Data/Images/skill-sword-storm.webp"]),
+      turtleQuake: loadOptionalImage(["./Data/Images/skill-turtle-quake.png", "./Data/Images/skill-turtle-quake.webp"]),
+      turtleBarrier: loadOptionalImage(["./Data/Images/skill-turtle-barrier.png", "./Data/Images/skill-turtle-barrier.webp"]),
+      birdBolt: loadOptionalImage(["./Data/Images/skill-bird-bolt.png", "./Data/Images/skill-bird-bolt.webp"]),
+      kingGuard: loadOptionalImage(["./Data/Images/skill-king-guard.png", "./Data/Images/skill-king-guard.webp"]),
+      kingPillar: loadOptionalImage(["./Data/Images/skill-king-pillar.png", "./Data/Images/skill-king-pillar.webp"])
+    };
+
     this.fishSpriteCache = {};
 
     this.corals = Array.from({ length: 180 }, () => ({
@@ -95,51 +105,39 @@ export class GameRenderer {
     const {
       camera, bubbles, foods, mapItems, poisonClouds, projectiles, afterimages,
       aiFishes, remotePlayers, bossesState, myFish, effStats, domainCheck,
-      biteEffects, reflectEffects, floatingTexts, top1Uid
+      biteEffects, reflectEffects, visualRings, screenSlashes, judgmentPillars, floatingTexts, top1Uid
     } = state;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     const viewScale = Math.min(1.0, Math.max(0.56, Math.min(w, h) / 760));
-    const halfW = (w / 2) / viewScale + 140;
-    const halfH = (h / 2) / viewScale + 140;
-    const minX = camera.x - halfW, maxX = camera.x + halfW;
-    const minY = camera.y - halfH, maxY = camera.y + halfH;
+    const halfW = (w / 2) / viewScale + 140, halfH = (h / 2) / viewScale + 140;
+    const minX = camera.x - halfW, maxX = camera.x + halfW, minY = camera.y - halfH, maxY = camera.y + halfH;
     const inView = (ox, oy, pad = 0) => ox >= minX - pad && ox <= maxX + pad && oy >= minY - pad && oy <= maxY + pad;
 
     const grad = ctx.createLinearGradient(0, 0, 0, h);
     grad.addColorStop(0, "#0b5b8c"); grad.addColorStop(0.55, "#053356"); grad.addColorStop(1, "#02182b");
     ctx.fillStyle = grad; ctx.fillRect(0, 0, w, h);
 
-    ctx.save();
-    ctx.globalAlpha = 0.08; ctx.fillStyle = "#a5f3fc";
+    ctx.save(); ctx.globalAlpha = 0.08; ctx.fillStyle = "#a5f3fc";
     for (let i = 0; i < 6; i++) {
       const rx = ((i * 340 - camera.x * 0.2) % (w + 400)) - 100;
       ctx.beginPath(); ctx.moveTo(rx, 0); ctx.lineTo(rx + 120, 0); ctx.lineTo(rx + 280, h); ctx.lineTo(rx + 40, h); ctx.closePath(); ctx.fill();
     }
     ctx.restore();
 
-    ctx.save();
-    ctx.translate(w / 2, h / 2);
-    ctx.scale(viewScale, viewScale);
-    ctx.translate(-camera.x, -camera.y);
-
-    ctx.strokeStyle = "rgba(77, 184, 255, 0.5)"; ctx.lineWidth = 10;
-    ctx.strokeRect(0, 0, MAP_SIZE, MAP_SIZE);
+    ctx.save(); ctx.translate(w / 2, h / 2); ctx.scale(viewScale, viewScale); ctx.translate(-camera.x, -camera.y);
+    ctx.strokeStyle = "rgba(77, 184, 255, 0.5)"; ctx.lineWidth = 10; ctx.strokeRect(0, 0, MAP_SIZE, MAP_SIZE);
 
     this.corals.forEach(c => {
       if (!inView(c.x, c.y, c.r)) return;
-      ctx.fillStyle = `hsla(${c.hue}, 55%, 32%, 0.22)`;
-      ctx.beginPath(); ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = `hsla(${c.hue}, 55%, 32%, 0.22)`; ctx.beginPath(); ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2); ctx.fill();
     });
-
     bubbles.forEach(b => {
       if (!inView(b.x, b.y, 10)) return;
-      ctx.strokeStyle = "rgba(200, 244, 255, 0.35)"; ctx.lineWidth = 1.2;
-      ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = "rgba(200, 244, 255, 0.35)"; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.stroke();
     });
 
-    const t = performance.now() / 1000;
-    const nowMs = Date.now();
+    const t = performance.now() / 1000, nowMs = Date.now();
 
     Object.values(bossesState).forEach(b => {
       if (!b || !b.alive) return;
@@ -147,56 +145,202 @@ export class GameRenderer {
       if ((b.vortexUntil || 0) > nowMs) this._drawBossVortex(b.x, b.y, BOSS_VORTEX_RADIUS, t);
     });
 
-    if (myFish && myFish.ultTimer > 0 && getFishConfig(myFish.species).ultimate.domainRadius) {
-      this._drawDomain(myFish.x, myFish.y, getFishConfig(myFish.species).ultimate.domainRadius, t);
-    }
+    const mySpec = myFish ? getFishConfig(myFish.species).skills[3] : null;
+    if (myFish && myFish.ultTimer > 0 && mySpec?.domainRadius) this._drawDomain(myFish.x, myFish.y, mySpec.domainRadius, t);
     Object.values(remotePlayers).forEach(p => {
-      const rCfg = getFishConfig(p.species);
-      if (p.ultActive && rCfg.ultimate.domainRadius) {
-        this._drawDomain(p.x, p.y, rCfg.ultimate.domainRadius, t);
-      }
+      const sp = getFishConfig(p.species).skills[3];
+      if (p.ultActive && sp?.domainRadius) this._drawDomain(p.x, p.y, sp.domainRadius, t);
     });
 
-    // Vệt độc 5 giây
+    // Thái Cổ Kết Giới (Skill Cuối Rùa Cấp 40)
+    if (myFish?.ultFinisher?.type === "turtleBarrier") {
+      this._drawTurtleBarrier(myFish.x, myFish.y, myFish.ultFinisher.radius, t);
+    }
+
     (poisonClouds || []).forEach(pc => {
-      const alpha = Math.min(1, pc.life / pc.maxLife);
-      ctx.save();
-      ctx.globalAlpha = alpha * 0.55;
+      if (!inView(pc.x, pc.y, pc.radius)) return;
+      ctx.save(); ctx.globalAlpha = Math.min(1, pc.life / pc.maxLife) * 0.55;
       const pg = ctx.createRadialGradient(pc.x, pc.y, pc.radius * 0.15, pc.x, pc.y, pc.radius);
-      pg.addColorStop(0, "rgba(74, 222, 128, 0.85)");
-      pg.addColorStop(0.6, "rgba(22, 163, 74, 0.5)");
-      pg.addColorStop(1, "rgba(21, 128, 61, 0)");
-      ctx.fillStyle = pg;
-      ctx.beginPath(); ctx.arc(pc.x, pc.y, pc.radius, 0, Math.PI * 2); ctx.fill();
-      ctx.restore();
+      pg.addColorStop(0, "rgba(74, 222, 128, 0.85)"); pg.addColorStop(0.6, "rgba(22, 163, 74, 0.5)"); pg.addColorStop(1, "rgba(21, 128, 61, 0)");
+      ctx.fillStyle = pg; ctx.beginPath(); ctx.arc(pc.x, pc.y, pc.radius, 0, Math.PI * 2); ctx.fill(); ctx.restore();
     });
 
-    // Item Buff trên map
     (mapItems || []).forEach(it => {
       if (!inView(it.x, it.y, 40)) return;
-      const bob = Math.sin(t * 3.5 + it.phase) * 4;
-      const imgObj = this.itemImgs[it.type];
-      ctx.save();
-      ctx.translate(it.x, it.y + bob);
+      const bob = Math.sin(t * 3.5 + it.phase) * 4, imgObj = this.itemImgs[it.type];
+      ctx.save(); ctx.translate(it.x, it.y + bob);
       const og = ctx.createRadialGradient(0, 0, 4, 0, 0, 26);
-      og.addColorStop(0, "rgba(255,255,255,0.45)");
-      og.addColorStop(0.6, it.color + "66");
-      og.addColorStop(1, "rgba(0,0,0,0)");
-      ctx.fillStyle = og;
-      ctx.beginPath(); ctx.arc(0, 0, 26, 0, Math.PI * 2); ctx.fill();
-
-      if (isImgOk(imgObj)) {
-        ctx.drawImage(imgObj.img, -20, -20, 40, 40);
-      } else {
-        ctx.fillStyle = "rgba(6, 28, 49, 0.9)";
-        ctx.strokeStyle = it.color; ctx.lineWidth = 2.5;
+      og.addColorStop(0, "rgba(255,255,255,0.45)"); og.addColorStop(0.6, it.color + "66"); og.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = og; ctx.beginPath(); ctx.arc(0, 0, 26, 0, Math.PI * 2); ctx.fill();
+      if (isImgOk(imgObj)) ctx.drawImage(imgObj.img, -20, -20, 40, 40);
+      else {
+        ctx.fillStyle = "rgba(6, 28, 49, 0.9)"; ctx.strokeStyle = it.color; ctx.lineWidth = 2.5;
         ctx.beginPath(); ctx.arc(0, 0, 17, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-        ctx.font = it.fallbackText ? "bold 12px Segoe UI" : "18px Segoe UI";
-        ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.font = it.fallbackText ? "bold 12px Segoe UI" : "18px Segoe UI"; ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
         ctx.fillText(it.fallbackText || it.icon, 0, 1);
       }
       ctx.restore();
     });
+
+    foods.forEach(f => {
+      if (!inView(f.x, f.y, 40)) return;
+      const pulse = Math.sin(t * 3.5 + f.phase) * 1.5, bobY = Math.sin(t * 2.5 + f.phase) * 3;
+      if (isImgOk(this.foodImg)) {
+        const size = (f.r * 5.2) + pulse * 2;
+        if (f.val > 20) {
+          ctx.save(); ctx.globalAlpha = 0.38 + Math.sin(t * 5 + f.phase) * 0.12;
+          ctx.fillStyle = "#ffd43b"; ctx.beginPath(); ctx.arc(f.x, f.y + bobY, size * 0.38, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+        }
+        ctx.drawImage(this.foodImg.img, f.x - size / 2, f.y + bobY - size / 2, size, size);
+      } else {
+        ctx.fillStyle = f.color; ctx.beginPath(); ctx.arc(f.x, f.y, f.r + pulse, 0, Math.PI * 2); ctx.fill();
+      }
+    });
+
+    // Vòng sóng kỹ năng (Chấn động / Hoàng uy / Long ngâm)
+    (visualRings || []).forEach(vr => {
+      const a = vr.life / vr.maxLife;
+      ctx.save(); ctx.globalAlpha = a * 0.85; ctx.translate(vr.x, vr.y);
+      const curR = vr.radius * (1.1 - a * 0.45);
+      const imgObj = vr.spriteKey ? this.skillImgs[vr.spriteKey] : null;
+      if (isImgOk(imgObj)) ctx.drawImage(imgObj.img, -curR, -curR, curR * 2, curR * 2);
+      else {
+        ctx.strokeStyle = vr.color || "#fde047"; ctx.lineWidth = 5;
+        ctx.beginPath(); ctx.arc(0, 0, curR, 0, Math.PI * 2); ctx.stroke();
+      }
+      ctx.restore();
+    });
+
+    // Đạn & Kiếm khí
+    projectiles.forEach(pr => {
+      ctx.save(); ctx.translate(pr.x, pr.y); ctx.rotate(pr.angle || Math.atan2(pr.vy, pr.vx));
+      const imgObj = pr.spriteKey ? this.skillImgs[pr.spriteKey] : null;
+      const rad = pr.radius || 14;
+      if (isImgOk(imgObj)) {
+        ctx.drawImage(imgObj.img, -rad * 1.4, -rad * 1.4, rad * 2.8, rad * 2.8);
+      } else if (pr.spriteKey === "swordWave") {
+        ctx.strokeStyle = "#e0f2fe"; ctx.lineWidth = 6;
+        ctx.beginPath(); ctx.arc(-10, 0, rad, -1.1, 1.1); ctx.stroke();
+      } else {
+        ctx.fillStyle = pr.color; ctx.beginPath(); ctx.arc(0, 0, rad * 0.8, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.restore();
+    });
+
+    afterimages.forEach(af => {
+      ctx.save(); ctx.globalAlpha = (af.life / af.maxLife) * 0.48;
+      this._drawFish(af.x, af.y, af.angle, af.species, af.level, af.tier, af.sizeMult, "", 1, 1, false, false, false, 0, false, false, 0, "", t, true);
+      ctx.restore();
+    });
+
+    const myDomRadius = (myFish && myFish.ultTimer > 0 && mySpec?.domainRadius) || 0;
+
+    aiFishes.forEach(ai => {
+      if (!inView(ai.x, ai.y, 140)) return;
+      const lbl = ai.elite ? `⭐ ${ai.name} [Cấp ${ai.level}]` : `${ai.name} [Cấp ${ai.level}]`;
+      this._drawFish(ai.x, ai.y, ai.angle, ai.species, ai.level, ai.tier, 1, lbl, ai.hp, ai.maxHp, ai.elite, false, false, 0, false, !!ai.suppressed, ai.stunTimer || 0, "", t, false);
+    });
+
+    Object.values(remotePlayers).forEach(p => {
+      const pSup = myDomRadius > 0 && Math.hypot(p.x - myFish.x, p.y - myFish.y) <= myDomRadius;
+      this._drawFish(p.x, p.y, p.angle, p.species, p.level || 1, p.tier || 1, p.sizeMult || 1, p.name, p.hp, p.maxHp, p.uid === top1Uid, false, p.shield, p.chomping ? 0.8 : 0, !!p.ultActive, pSup, p.stunned ? 1 : 0, "", t, false);
+    });
+
+    Object.values(bossesState).forEach(b => {
+      if (!b || !b.alive) return;
+      const bSup = myDomRadius > 0 && Math.hypot(b.x - myFish.x, b.y - myFish.y) <= myDomRadius;
+      const isHungry = (b.hungryUntil || 0) > nowMs, isAbs = (b.absUntil || 0) > nowMs;
+      const bossBuffLabel = isAbs ? "🔥 SỨC MẠNH TUYỆT ĐỐI" : (isHungry ? "💢 CON MỒI TRƯỚC MẮT" : "");
+      this._drawFish(b.x, b.y, b.angle || 0, "boss", b.level || 10, b.tier || 2, 1.35, `${b.name} (Cấp ${b.level || 10})`, b.hp, b.maxHp, false, true, isAbs, 0.35, isHungry || isAbs, bSup, 0, bossBuffLabel, t, false);
+    });
+
+    if (myFish) {
+      // Cận Vệ Hoàng Kim xoay quanh Cá Vua
+      (myFish.kingGuards || []).forEach(g => {
+        const ga = t * 3.5 + g.angleOffset;
+        const gx = myFish.x + Math.cos(ga) * 125, gy = myFish.y + Math.sin(ga) * 125;
+        ctx.save(); ctx.translate(gx, gy); ctx.rotate(ga + Math.PI / 2);
+        if (isImgOk(this.skillImgs.kingGuard)) ctx.drawImage(this.skillImgs.kingGuard.img, -28, -28, 56, 56);
+        else {
+          ctx.fillStyle = "#facc15"; ctx.beginPath(); ctx.ellipse(0, 0, 22, 11, 0, 0, Math.PI * 2); ctx.fill();
+          ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.stroke();
+        }
+        ctx.restore();
+      });
+
+      const chomp = myFish.chompTimer > 0 ? myFish.chompTimer / 0.22 : 0;
+      const flyScale = myFish.knockbackFly ? (1 + Math.sin(myFish.knockbackFly.progress * Math.PI) * 0.45) : 1;
+      const rollSpin = myFish.rollTimer > 0 ? t * 18 : myFish.angle;
+      const finLabel = myFish.ultFinisher?.type === "birdMeteor" ? "☄️ LƯU TINH HỦY DIỆT" : "";
+      this._drawFish(myFish.x, myFish.y, rollSpin, myFish.species, myFish.level, myFish.tier, myFish.sizeMult * flyScale, myFish.name, myFish.hp, effStats.maxHp, myFish.uid === top1Uid, false, myFish.shieldTimer > 0, chomp, myFish.ultTimer > 0, domainCheck.suppressed, myFish.stunTimer, finLabel, t, false);
+    }
+
+    Object.values(bossesState).forEach(b => {
+      if (b?.alive && b.rangedStrike && nowMs <= b.rangedStrike.expiresAt) this._drawBossTornado(b.rangedStrike, nowMs, t);
+    });
+
+    // Hải Vương Phán Quyết: Cột Sét Long Ấn giáng xuống đầu địch
+    (judgmentPillars || []).forEach(jp => {
+      const a = jp.life / jp.maxLife;
+      ctx.save(); ctx.globalAlpha = a; ctx.translate(jp.x, jp.y);
+      if (isImgOk(this.skillImgs.kingPillar)) {
+        ctx.drawImage(this.skillImgs.kingPillar.img, -80, -280, 160, 320);
+      } else {
+        const bg = ctx.createLinearGradient(-35, 0, 35, 0);
+        bg.addColorStop(0, "rgba(251,191,36,0)"); bg.addColorStop(0.5, "#fef08a"); bg.addColorStop(1, "rgba(251,191,36,0)");
+        ctx.fillStyle = bg; ctx.fillRect(-35, -320, 70, 330);
+        ctx.strokeStyle = "#f59e0b"; ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.arc(0, 0, 62 * (1.2 - a * 0.3), 0, Math.PI * 2); ctx.stroke();
+      }
+      ctx.restore();
+    });
+
+    // Vạn Kiếm Trảm Không: Vết kiếm chém đan xen khắp màn hình
+    (screenSlashes || []).forEach(sl => {
+      const a = sl.life / sl.maxLife;
+      ctx.save(); ctx.globalAlpha = a; ctx.translate(sl.x, sl.y); ctx.rotate(sl.angle);
+      if (isImgOk(this.skillImgs.swordStorm)) {
+        ctx.drawImage(this.skillImgs.swordStorm.img, -sl.len / 2, -45, sl.len, 90);
+      } else {
+        ctx.strokeStyle = "#e0f2fe"; ctx.lineWidth = 5 * a + 2;
+        ctx.beginPath(); ctx.moveTo(-sl.len / 2, 0); ctx.lineTo(sl.len / 2, 0); ctx.stroke();
+        ctx.strokeStyle = "#38bdf8"; ctx.lineWidth = 12 * a;
+        ctx.globalAlpha = a * 0.4;
+        ctx.beginPath(); ctx.moveTo(-sl.len / 2, 0); ctx.lineTo(sl.len / 2, 0); ctx.stroke();
+      }
+      ctx.restore();
+    });
+
+    this._drawBiteEffects(biteEffects);
+    this._drawReflectEffects(reflectEffects);
+
+    floatingTexts.forEach(ft => {
+      ctx.font = `bold ${Math.round(16 * (ft.scale || 1))}px Segoe UI`;
+      ctx.fillStyle = ft.color; ctx.textAlign = "center";
+      ctx.strokeStyle = "rgba(0,0,0,0.65)"; ctx.lineWidth = 3;
+      ctx.strokeText(ft.text, ft.x, ft.y); ctx.fillText(ft.text, ft.x, ft.y);
+    });
+
+    ctx.restore();
+  }
+
+  _drawTurtleBarrier(x, y, radius, t) {
+    const ctx = this.ctx;
+    ctx.save(); ctx.translate(x, y);
+    if (isImgOk(this.skillImgs.turtleBarrier)) {
+      ctx.rotate(t * 0.6); ctx.globalAlpha = 0.72;
+      ctx.drawImage(this.skillImgs.turtleBarrier.img, -radius, -radius, radius * 2, radius * 2);
+    } else {
+      const g = ctx.createRadialGradient(0, 0, radius * 0.7, 0, 0, radius);
+      g.addColorStop(0, "rgba(250, 204, 21, 0.05)");
+      g.addColorStop(0.85, "rgba(234, 179, 8, 0.25)");
+      g.addColorStop(1, "rgba(254, 240, 138, 0.85)");
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = "#fef08a"; ctx.lineWidth = 6;
+      ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.restore();
+  }
 
     // Thức ăn
     foods.forEach(f => {
@@ -546,7 +690,7 @@ export class GameRenderer {
         ctx.fillStyle = ag; ctx.beginPath(); ctx.arc(0, 0, r * 1.55, 0, Math.PI * 2); ctx.fill(); ctx.restore();
       }
 
-      if (ultActive && fishCfg?.ultimate?.shieldVisual === "honeycomb") {
+      if (ultActive && fishCfg?.skills?.[3]?.shieldVisual === "honeycomb") {
         this._drawHoneycombShield(r, t);
       } else if (hasShield) {
         ctx.strokeStyle = isBoss ? "#fb7185" : "#51cf66"; ctx.lineWidth = 3.5;

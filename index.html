@@ -130,17 +130,8 @@
         </div>
       </div>
 
-      <div class="mobile-actions">
-        <button id="btn-mobile-ult" class="btn-touch-action btn-touch-ult" type="button">
-          <span class="touch-icon">🔥</span>
-          <span class="touch-label" id="mobile-ult-label">TUYỆT CHIÊU</span>
-          <div class="touch-cd" id="mobile-ult-cd"></div>
-        </button>
-        <button id="btn-mobile-skill" class="btn-touch-action btn-touch-skill" type="button">
-          <span class="touch-icon">⚡</span>
-          <span class="touch-label" id="mobile-skill-label">SKILL</span>
-          <div class="touch-cd" id="mobile-skill-cd"></div>
-        </button>
+      <div class="mobile-actions-wrap">
+        <div id="mobile-skills-bar" class="mobile-skills-bar"></div>
         <button id="btn-mobile-bite" class="btn-touch-action btn-touch-bite" type="button">
           <span class="touch-icon">🦷</span>
           <span class="touch-label">CẮN</span>
@@ -148,24 +139,15 @@
       </div>
     </div>
 
-    <!-- PHÍA DƯỚI NGAY GIỮA: MÁU, EXP, TIẾN HÓA, BUFF, 2 SKILL -->
+    <!-- PHÍA DƯỚI NGAY GIỮA: MÁU, EXP, TIẾN HÓA, BUFF, 5 SKILL & NÂNG CẤP SKILL -->
     <div class="hud-bottom-center">
       <div id="active-buffs-bar" class="active-buffs"></div>
+      <div id="skill-points-banner" class="skill-points-banner hidden">✨ Có <span id="sp-count">0</span> điểm nâng cấp Skill! Bấm (+) trên ô kỹ năng</div>
       <div class="evo-label" id="hud-evo-info">Cấp 1 • Dạng 1: Cá Con Tập Sự</div>
 
+      <div id="hud-skills-bar" class="hud-skills-bar"></div>
+
       <div class="bars-row">
-        <div class="skill-box" id="hud-skill-box">
-          <div class="skill-key">SPACE</div>
-          <div class="skill-name" id="hud-skill-name">Skill</div>
-          <div class="skill-cd-overlay" id="hud-skill-cd"></div>
-        </div>
-
-        <div class="skill-box ult-box" id="hud-ult-box">
-          <div class="skill-key">E / R</div>
-          <div class="skill-name" id="hud-ult-name">Đặc biệt</div>
-          <div class="skill-cd-overlay" id="hud-ult-cd"></div>
-        </div>
-
         <div class="stat-bars">
           <div class="bar-wrap hp-wrap">
             <div class="bar-fill hp-fill" id="hud-hp-fill"></div>
@@ -173,12 +155,11 @@
           </div>
           <div class="bar-wrap exp-wrap">
             <div class="bar-fill exp-fill" id="hud-exp-fill"></div>
-            <span class="bar-text" id="hud-exp-text">EXP: 0 / 45</span>
+            <span class="bar-text" id="hud-exp-text">EXP: 0 / 50</span>
           </div>
         </div>
       </div>
     </div>
-  </div>
 
   <!-- MÀN HÌNH KẾT THÚC / TỬ VONG -->
   <div id="death-modal" class="modal hidden">
