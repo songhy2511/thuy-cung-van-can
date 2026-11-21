@@ -1,11 +1,13 @@
 export const MAP_SIZE = 3200;
-export const BASE_FOOD_COUNT = 240;
+export const BASE_FOOD_COUNT = 312;    // Tăng +30% mật độ mồi (240 -> 312)
+export const MAP_ITEM_COUNT = 18;      // Số lượng Item Buff rải rác trên map
+export const MAP_ITEM_DURATION = 15;   // Thời gian hiệu lực buff tạm thời (15 giây)
+
 export const BOSS_RESPAWN_MS = 60000;   // 1 phút
 export const EVENT_DURATION_MS = 30000; // Sự kiện kéo dài 30 giây
 export const EVENT_INTERVAL_MS = 120000;// Mỗi 2 phút 1 lần
 export const DOMAIN_RADIUS = 340;
 
-// Thông số tầm nhìn & kỹ năng Boss
 export const BOSS_VISION_RADIUS = 620;
 export const BOSS_RANGED_RANGE = 500;
 export const BOSS_VORTEX_RADIUS = 230;
@@ -27,11 +29,11 @@ export const BOSS_SPAWNS = [
 ];
 
 export const UPGRADE_DEFS = [
-  { key: "hp",       name: "Máu Khởi Đầu",   bonusText: "+20 HP / cấp",            baseCost: 100, stepCost: 80, maxLevel: MAX_UPGRADE_LEVEL },
-  { key: "speed",    name: "Tốc Độ Bơi",     bonusText: "+2% Tốc độ / cấp",        baseCost: 100, stepCost: 80, maxLevel: MAX_UPGRADE_LEVEL },
-  { key: "dmg",      name: "Sức Cắn",        bonusText: "+5 Sát thương / cấp",     baseCost: 100, stepCost: 80, maxLevel: MAX_UPGRADE_LEVEL },
-  { key: "eatRange", name: "Hút Thức Ăn",    bonusText: "+5% Tầm hút / cấp",       baseCost: 100, stepCost: 80, maxLevel: MAX_UPGRADE_LEVEL },
-  { key: "defense",  name: "Giảm Sát Thương",bonusText: "+1% Giảm ST nhận / cấp",  baseCost: 100, stepCost: 80, maxLevel: MAX_UPGRADE_LEVEL }
+  { key: "hp",       name: "Máu Khởi Đầu",    bonusText: "+20 HP / cấp",           baseCost: 100, stepCost: 80, maxLevel: MAX_UPGRADE_LEVEL },
+  { key: "speed",    name: "Tốc Độ Bơi",      bonusText: "+2% Tốc độ / cấp",       baseCost: 100, stepCost: 80, maxLevel: MAX_UPGRADE_LEVEL },
+  { key: "dmg",      name: "Sức Cắn",         bonusText: "+5 Sát thương / cấp",    baseCost: 100, stepCost: 80, maxLevel: MAX_UPGRADE_LEVEL },
+  { key: "eatRange", name: "Hút Thức Ăn",     bonusText: "+5% Tầm hút / cấp",      baseCost: 100, stepCost: 80, maxLevel: MAX_UPGRADE_LEVEL },
+  { key: "defense",  name: "Giảm Sát Thương", bonusText: "+1% Giảm ST nhận / cấp", baseCost: 100, stepCost: 80, maxLevel: MAX_UPGRADE_LEVEL }
 ];
 
 export const QUEST_TEMPLATES = [

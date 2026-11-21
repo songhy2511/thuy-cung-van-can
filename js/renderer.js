@@ -45,6 +45,16 @@ export class GameRenderer {
     this.bossDomainImg = loadOptionalImage(["./Data/Images/boss-domain.png", "./Data/Images/boss-domain.webp"]);
     this.bossTornadoImg = loadOptionalImage(["./Data/Images/boss-tornado.png", "./Data/Images/boss-tornado.webp"]);
 
+    this.itemImgs = {
+      speed: loadOptionalImage(["./Data/Images/item-speed.png", "./Data/Images/item-speed.webp"]),
+      magnet: loadOptionalImage(["./Data/Images/item-magnet.png", "./Data/Images/item-magnet.webp"]),
+      exp: loadOptionalImage(["./Data/Images/item-exp.png", "./Data/Images/item-exp.webp"]),
+      poison: loadOptionalImage(["./Data/Images/item-poison.png", "./Data/Images/item-poison.webp"]),
+      luck: loadOptionalImage(["./Data/Images/item-luck.png", "./Data/Images/item-luck.webp"]),
+      aoma: loadOptionalImage(["./Data/Images/item-aoma.png", "./Data/Images/item-aoma.webp"]),
+      ironman: loadOptionalImage(["./Data/Images/item-ironman.png", "./Data/Images/item-ironman.webp"])
+    };
+
     this.fishSpriteCache = {};
 
     this.corals = Array.from({ length: 45 }, () => ({
@@ -79,7 +89,7 @@ export class GameRenderer {
 
   renderWorld(state) {
     const { ctx, logicalW: w, logicalH: h, dpr } = this;
-    const { camera, bubbles, foods, projectiles, afterimages, aiFishes, remotePlayers, bossesState, myFish, effStats, domainCheck, biteEffects, reflectEffects, floatingTexts, top1Uid } = state;
+    const { camera, bubbles, foods, mapItems, poisonClouds, projectiles, afterimages, aiFishes, remotePlayers, bossesState, myFish, effStats, domainCheck, biteEffects, reflectEffects, floatingTexts, top1Uid } = state;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     const viewScale = Math.min(1.0, Math.max(0.56, Math.min(w, h) / 760));
@@ -137,6 +147,50 @@ export class GameRenderer {
         this._drawDomain(p.x, p.y, rCfg.ultimate.domainRadius, t);
       }
     });
+
+    // Vệt độc (giữ lại 5 giây)
+(poisonClouds || []).forEach(pc => {
+  const alpha = Math.min(1, pc.life / pc.maxLife);
+  ctx.save();
+  ctx.globalAlpha = alpha * 0.55;
+  const pg = ctx.createRadialGradient(pc.x, pc.y, pc.radius * 0.15, pc.x, pc.y, pc.radius);
+  pg.addColorStop(0, "rgba(74, 222, 128, 0.85)");
+  pg.addColorStop(0.6, "rgba(22, 163, 74, 0.5)");
+  pg.addColorStop(1, "rgba(21, 128, 61, 0)");
+  ctx.fillStyle = pg;
+  ctx.beginPath(); ctx.arc(pc.x, pc.y, pc.radius, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+});
+
+// Item Buff rải rác trên map
+(mapItems || []).forEach(it => {
+  const bob = Math.sin(t * 3.5 + it.phase) * 4;
+  const imgObj = this.itemImgs[it.type];
+  ctx.save();
+  ctx.translate(it.x, it.y + bob);
+  // Quầng sáng tròn nổi bật phân biệt với thức ăn thường
+  const og = ctx.createRadialGradient(0, 0, 4, 0, 0, 26);
+  og.addColorStop(0, "rgba(255,255,255,0.45)");
+  og.addColorStop(0.6, it.color + "66");
+  og.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = og;
+  ctx.beginPath(); ctx.arc(0, 0, 26, 0, Math.PI * 2); ctx.fill();
+
+  if (imgObj && imgObj.ready) {
+    ctx.drawImage(imgObj.img, -20, -20, 40, 40);
+  } else {
+    ctx.fillStyle = "rgba(6, 28, 49, 0.9)";
+    ctx.strokeStyle = it.color;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.arc(0, 0, 17, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.font = it.fallbackText ? "bold 12px Segoe UI" : "18px Segoe UI";
+    ctx.fillStyle = "#fff";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(it.fallbackText || it.icon, 0, 1);
+  }
+  ctx.restore();
+});
 
     // Thức ăn
     foods.forEach(f => {

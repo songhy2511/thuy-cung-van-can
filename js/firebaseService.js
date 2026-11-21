@@ -183,13 +183,13 @@ export function runBossDamageTransaction(bossId, uid, dmg, onResult) {
     if (!curr.alive || curr.hp <= 0) return;
 
     const now = Date.now();
-    // Skill "Sức mạnh tuyệt đối": Vô địch & chuyển hóa toàn bộ sát thương thành hồi HP!
-    if (curr.absUntil && curr.absUntil > now) {
-      healAmount = Math.round(dmg);
-      curr.hp = Math.min(curr.maxHp, curr.hp + healAmount);
-      absorbedByBoss = true;
-      return curr;
-    }
+    // 3. Skill "Sức mạnh tuyệt đối": Sau 10s kể từ khi vào giao tranh/đuổi theo (còn người chơi trong tầm nhìn)
+      const activeCombatAt = b.combatStartedAt || b.chaseStartedAt || 0;
+      if (!isAbs && activeCombatAt > 0 && now - activeCombatAt >= 10000 && now >= (b.absCdUntil || 0)) {
+        patch.absUntil = now + 10000;
+        patch.absCdUntil = now + 20000; // Hồi 10s sau khi hết trạng thái để kích hoạt thường xuyên hơn
+        patch.combatStartedAt = now + 10000;
+      }
 
     curr.hp -= Math.round(dmg);
     curr.lastHitBy = uid;
