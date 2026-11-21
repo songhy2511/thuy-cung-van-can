@@ -76,8 +76,8 @@ let roomUnsubs = [];
 
 function createInitialBossData(sp, idx, bossLevel, minutesElapsed = 0) {
   const bossTier = Math.min(5, Math.max(2, 1 + Math.floor(bossLevel / 10)));
-  const hpTimeMult = 1 + minutesElapsed * 0.18;  // Boss tăng +18% máu mỗi phút
-  const dmgTimeMult = 1 + minutesElapsed * 0.12; // Boss tăng +12% sát thương mỗi phút
+  const hpTimeMult = 1 + minutesElapsed * 0.18;
+  const dmgTimeMult = 1 + minutesElapsed * 0.12;
   const maxHp = Math.round((900 + bossLevel * 125) * hpTimeMult);
   const dmg = Math.round((65 + bossLevel * 12) * dmgTimeMult);
 
@@ -171,7 +171,6 @@ export function notifyBossDealtDamage(bossId) {
 export function runBossDamageTransaction(bossId, uid, dmg, bossMeta, onResult) {
   const now = Date.now();
   const isAbs = (bossMeta?.absUntil || 0) > now;
-  // Chỉ transaction trực tiếp trên /hp để không bao giờ xung đột với cập nhật tọa độ x, y
   const hpRef = ref(db, `rooms/main/bosses/${bossId}/hp`);
   let killedByThisTx = false;
   let healedAmount = 0;
@@ -230,6 +229,19 @@ export function hostUpdateWorld(bossesState, eventState, allPlayers, highestTier
       }
       return;
     }
+
+    // Tìm người chơi trong tầm nhìn của Boss
+    let target = null, minDist = BOSS_VISION_RADIUS;
+    allPlayers.forEach(p => {
+      const d = Math.hypot(p.x - b.x, p.y - b.y);
+      if (d < minDist) { minDist = d; target = p; }
+    });
+
+    const isHungry = (b.hungryUntil || 0) > now;
+    const isAbs = (b.absUntil || 0) > now;
+    const isLunging = isAbs && (b.lungeUntil || 0) > now;
+    const hungryMult = isHungry ? 1.5 : 1.0;
+
     const desiredTier = Math.min(5, Math.max(2, 1 + Math.floor(desiredBossLevel / 10)));
     const scaledDmg = Math.round((65 + Math.max(b.level || 10, desiredBossLevel) * 12) * (1 + minutesElapsed * 0.12));
     const patch = {
@@ -245,41 +257,41 @@ export function hostUpdateWorld(bossesState, eventState, allPlayers, highestTier
         patch.lastDealtDmgAt = now;
       }
 
-      // 1. Skill "Con mồi trước mắt": Đuổi 5s không gây được sát thương -> Đói Khát 5s
+      // 1. Con mồi trước mắt (5s đuổi không gây dame -> Đói Khát 5s)
       const lastDmgRef = Math.max(b.chaseStartedAt || now, b.lastDealtDmgAt || 0);
       if (!isHungry && (b.chaseStartedAt || 0) > 0 && now - lastDmgRef >= 5000) {
         patch.hungryUntil = now + 5000;
         patch.lastDealtDmgAt = now + 5000;
       }
 
-      // 2. Skill "Chạy đâu cho thoát": Tạo vòng xoáy quanh bản thân làm choáng 5s
+      // 2. Chạy đâu cho thoát (Vòng xoáy choáng 5s)
       if (minDist <= 280 && now >= (b.vortexCdUntil || 0)) {
         patch.vortexStartedAt = now;
         patch.vortexUntil = now + 4000;
         patch.vortexCdUntil = now + 14000;
       }
 
-      // 3. Skill "Sức mạnh tuyệt đối": Sau 30s kể từ khi bị đánh (còn người chơi trong tầm nhìn)
-      if (!isAbs && (b.combatStartedAt || 0) > 0 && now - b.combatStartedAt >= 10000 && now >= (b.absCdUntil || 0)) {
+      // 3. Sức mạnh tuyệt đối (sau 10s giao tranh/đuổi theo)
+      const activeCombatAt = b.combatStartedAt || b.chaseStartedAt || 0;
+      if (!isAbs && activeCombatAt > 0 && now - activeCombatAt >= 10000 && now >= (b.absCdUntil || 0)) {
         patch.absUntil = now + 10000;
-        patch.absCdUntil = now + 45000;
-        patch.combatStartedAt = now + 10000; // Chu kỳ mới sau khi kết thúc
+        patch.absCdUntil = now + 20000;
+        patch.combatStartedAt = now + 10000;
       }
 
-      // Trong "Sức mạnh tuyệt đối", Boss định kỳ lao tới người chơi
       if (isAbs && !isLunging && now >= (b.lungeCdUntil || 0) && minDist > 90) {
         patch.lungeUntil = now + 500;
         patch.lungeCdUntil = now + 2200;
       }
 
-      // 4. Tấn công tầm xa: Ngoài tầm cận chiến nhưng trong tầm đánh xa
+      // 4. Tấn công tầm xa (lốc xoáy dưới chân người chơi)
       const bTier = Math.min(EVO_TIERS.length, Math.max(1, b.tier || 2));
       const bossR = EVO_TIERS[bTier - 1].baseRadius * 1.35;
       const meleeRange = (bossR + 65) * hungryMult;
       const rangedRange = BOSS_RANGED_RANGE * hungryMult;
 
       if (minDist > meleeRange && minDist <= rangedRange && now >= (b.rangedCdUntil || 0)) {
-        const dmgVal = Math.round(b.dmg * (isAbs ? 1.5 : 1.0));
+        const dmgVal = Math.round(patch.dmg * (isAbs ? 1.5 : 1.0));
         patch.rangedCdUntil = now + 1700;
         patch.rangedStrike = {
           id: `t_${sp.id}_${now}`,
@@ -293,19 +305,16 @@ export function hostUpdateWorld(bossesState, eventState, allPlayers, highestTier
         };
       }
     } else {
-      // Mất dấu người chơi quá 3.5 giây thì reset trạng thái đuổi & bộ đếm 30s
       if (b.lastSeenPlayerAt && now - b.lastSeenPlayerAt > 3500) {
         if (b.chaseStartedAt) patch.chaseStartedAt = 0;
         if (b.combatStartedAt) patch.combatStartedAt = 0;
       }
     }
 
-    // Dọn lốc xoáy đã hết hạn
     if (b.rangedStrike && now > b.rangedStrike.expiresAt) {
       patch.rangedStrike = null;
     }
 
-    // Di chuyển Boss
     let angle = b.angle || 0;
     if (target) angle = Math.atan2(target.y - b.y, target.x - b.x);
     else if (Math.hypot(b.x - sp.x, b.y - sp.y) > 1400) angle = Math.atan2(sp.y - b.y, sp.x - b.x);
@@ -323,7 +332,6 @@ export function hostUpdateWorld(bossesState, eventState, allPlayers, highestTier
     update(ref(db, `rooms/main/bosses/${sp.id}`), patch);
   });
 
-  // Cập nhật Sự kiện mỗi 2 phút (30 giây)
   if (eventState) {
     if (eventState.active && now >= eventState.endsAt) {
       set(ref(db, "rooms/main/event"), {

@@ -290,7 +290,6 @@ function buildSkillBarsUI() {
 
   cfg.skills.forEach((sk, idx) => {
     const typeClass = sk.isUltimate ? "ultimate-slot" : (sk.isSpecial ? "special-slot" : "");
-    // PC Slot + Nút nâng cấp (+)
     const wrap = document.createElement("div");
     wrap.className = "skill-slot-wrap";
     wrap.innerHTML = `
@@ -306,7 +305,6 @@ function buildSkillBarsUI() {
     wrap.querySelector(`#upg-sk-${idx}`).addEventListener("click", (e) => { e.stopPropagation(); upgradeSkillSlot(idx); });
     pcBar.appendChild(wrap);
 
-    // Mobile Circular Skill Button
     const mBtn = document.createElement("button");
     mBtn.type = "button";
     mBtn.className = `m-skill-btn ${typeClass}`;
@@ -327,8 +325,7 @@ function buildSkillBarsUI() {
 function upgradeSkillSlot(idx) {
   if (!myFish || myFish.skillPoints <= 0) return;
   const sk = getFishConfig(myFish.species).skills[idx];
-  if (!sk || myFish.level < sk.unlockLevel) return;
-  if (myFish.skillLevels[idx] >= MAX_SKILL_LEVEL) return;
+  if (!sk || myFish.level < sk.unlockLevel || myFish.skillLevels[idx] >= MAX_SKILL_LEVEL) return;
   myFish.skillPoints -= 1;
   myFish.skillLevels[idx] += 1;
   addToast(`⬆️ Đã nâng cấp [${sk.name}] lên Lv.${myFish.skillLevels[idx]} (+22% uy lực, -8% hồi chiêu)!`);
@@ -447,7 +444,6 @@ function spawnMapItem() {
   return { type: chosen.id, icon: chosen.icon, color: chosen.color, fallbackText: chosen.fallbackText || "", x: 400 + Math.random() * (MAP_SIZE - 800), y: 400 + Math.random() * (MAP_SIZE - 800), phase: Math.random() * Math.PI * 2 };
 }
 
-// Cá AI phân bổ theo cấp độ người chơi mạnh nhất (gồm cả Cá Tinh Anh cấp cao cho nhiều EXP!)
 function spawnAiFish(idx) {
   const keys = getAllFishConfigs().filter(f => f.cost === 0).map(f => f.id);
   const topLvl = getHighestPlayerLevel();
@@ -459,7 +455,6 @@ function spawnAiFish(idx) {
   } else if (roll < 0.78) {
     level = Math.max(2, Math.floor(topLvl * 0.55 + Math.random() * Math.max(4, topLvl * 0.55)));
   } else {
-    // 22% xuất hiện Cá Tinh Anh cấp cao hơn/bằng top server -> rơi rất nhiều EXP!
     level = Math.min(45, topLvl + 1 + Math.floor(Math.random() * 4));
     elite = true;
   }
@@ -538,13 +533,12 @@ function triggerSkillSlot(slotIdx) {
     addFloatingText(myFish.x, myFish.y - 36, `🔒 Cần Cấp ${sk.unlockLevel}!`, "#cbd5e1", 0.95);
     return;
   }
-  // Cho phép Cá Vua bật Áp chế tuyệt đối để giải choáng, các skill khác bị khóa khi choáng
   if (myFish.stunTimer > 0 && !(sk.isSpecial && sk.domainRadius)) return;
   if (myFish.skillCooldowns[slotIdx] > 0) return;
 
   const skLv = myFish.skillLevels[slotIdx] || 1;
-  const lvDmgMult = 1 + (skLv - 1) * 0.22; // +22% uy lực mỗi cấp skill
-  const lvCdMult = Math.max(0.55, 1 - (skLv - 1) * 0.08); // -8% hồi chiêu mỗi cấp skill
+  const lvDmgMult = 1 + (skLv - 1) * 0.22;
+  const lvCdMult = Math.max(0.55, 1 - (skLv - 1) * 0.08);
   myFish.skillCooldowns[slotIdx] = sk.cd * lvCdMult * myFish.skillCdMult;
 
   const eff = getEffectiveStats();
@@ -619,7 +613,6 @@ function performBite() {
   const eff = getEffectiveStats();
   const spec = getFishSpecialSkill(myFish.species);
 
-  // Skill Cuối Cá Chim (Lưu Tinh Hủy Diệt): Tấn công siêu nhanh & lao xuyên hết tầm nhìn!
   if (myFish.ultFinisher?.type === "birdMeteor") {
     myFish.biteCooldown = 0.20;
     myFish.chompTimer = 0.16;
@@ -638,7 +631,6 @@ function performBite() {
     screenSlashes.push({ x: (startX + endX) / 2, y: (startY + endY) / 2, angle: myFish.angle, len: dashLen, life: 0.22, maxLife: 0.22 });
     myFish.x = endX; myFish.y = endY;
 
-    // Gây sát thương mọi kẻ địch dọc đường lao tới
     const hitLine = (tx, ty, tr) => {
       const l2 = Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2) || 1;
       const proj = Math.max(0, Math.min(1, ((tx - startX) * (endX - startX) + (ty - startY) * (endY - startY)) / l2));
@@ -751,7 +743,6 @@ function damageBoss(bossId, dmg, isCrit = false, fxX = null, fxY = null) {
       localBossKillLock[bossId] = true;
       setTimeout(() => { delete localBossKillLock[bossId]; }, 5000);
       sessionStats.bossKilled++; sessionStats.coinsEarned += 25;
-      // Boss cho EXP tương xứng với cấp độ của Boss để lên cấp cao (Cấp 30-40)
       const bossExp = Math.round(calcExpNeedForLevel(res.boss?.level || myFish.level) * 1.15);
       gainExp(bossExp);
       addToast(`🏆 HẠ GỤC ${(res.boss?.name || "BOSS").toUpperCase()}! (+25 Coin, +${bossExp} EXP)`);
@@ -769,7 +760,6 @@ function damageAiFish(ai, dmg, isCrit = false, fxX = ai.x, fxY = ai.y) {
 
   if (ai.hp <= 0) {
     sessionStats.fishKilled++; sessionStats.coinsEarned += ai.elite ? 4 : 2;
-    // Cá AI cấp cao rơi lượng EXP cực lớn theo đúng cấp độ của nó
     const aiExp = Math.round(calcExpNeedForLevel(ai.level) * (ai.elite ? 0.65 : 0.42));
     gainExp(aiExp);
     const eff = getEffectiveStats();
@@ -794,11 +784,9 @@ function onLevelReached(newLvl) {
   myFish.baseDmg += 3;
   pendingLevelUps++;
 
-  // Cộng điểm nâng cấp skill: mỗi 2 cấp +1 điểm, mốc tiến hóa (10,20,30,40) +1 điểm nữa
   if (newLvl % 2 === 0) myFish.skillPoints += 1;
   if (newLvl % 10 === 0 && newLvl <= 40) myFish.skillPoints += 1;
 
-  // Thông báo mở khóa Skill mới tại Cấp 10, 20, 30, 40
   const unlockedSk = getFishConfig(myFish.species).skills.find(s => s.unlockLevel === newLvl);
   if (unlockedSk) {
     addToast(`🔓 MỞ KHÓA SKILL MỚI [${SKILL_KEYS[unlockedSk.slot]}]: ${unlockedSk.name}!`);
@@ -921,7 +909,6 @@ function updateGame(dt) {
     myFish.y = Math.max(40, Math.min(MAP_SIZE - 40, myFish.y + Math.sin(myFish.angle) * curSpeed * moveFactor * dt));
   }
 
-  // ===== CẬP NHẬT SKILL CUỐI HỦY DIỆT (CẤP 40) =====
   if (myFish.ultFinisher) {
     const uf = myFish.ultFinisher;
     uf.timer -= dt;
@@ -929,7 +916,6 @@ function updateGame(dt) {
     const viewR = (Math.max(renderer.logicalW, renderer.logicalH) / 2) / viewScale;
 
     if (uf.type === "swordStorm") {
-      // Vạn Kiếm Trảm Không: Kiếm chém liên tục khắp màn hình trong 2s!
       uf.tickCd -= dt;
       if (uf.tickCd <= 0) {
         uf.tickCd = 0.2;
@@ -944,16 +930,12 @@ function updateGame(dt) {
         dealAoEDamage(camera.x, camera.y, viewR, uf.dmgPerTick);
       }
     } else if (uf.type === "turtleBarrier") {
-      // Thái Cổ Kết Giới: Đẩy toàn bộ địch ra ngoài kết giới + gây ST lớn nếu chạm thành!
       const nowB = Date.now(), bRad = uf.radius;
       const pushOut = (tx, ty, id, applyDmg) => {
         const d = Math.hypot(tx - myFish.x, ty - myFish.y);
         if (d < bRad + 28) {
           const ang = Math.atan2(ty - myFish.y, tx - myFish.x);
-          if (nowB >= (barrierHitCd[id] || 0)) {
-            barrierHitCd[id] = nowB + 450;
-            applyDmg(ang);
-          }
+          if (nowB >= (barrierHitCd[id] || 0)) { barrierHitCd[id] = nowB + 450; applyDmg(ang); }
           return { nx: myFish.x + Math.cos(ang) * (bRad + 35), ny: myFish.y + Math.sin(ang) * (bRad + 35) };
         }
         return null;
@@ -971,7 +953,6 @@ function updateGame(dt) {
         if (b?.alive) pushOut(b.x, b.y, b.id, () => damageBoss(b.id, uf.dmg, false, b.x, b.y - 50));
       });
     } else if (uf.type === "kingJudgement") {
-      // Hải Vương Phán Quyết: Giáng cột sét Long Ấn lên toàn bộ địch trong tầm nhìn + Hút máu 25%!
       uf.tickCd -= dt;
       if (uf.tickCd <= 0) {
         uf.tickCd = 0.45;
@@ -1007,24 +988,20 @@ function updateGame(dt) {
     if (uf.timer <= 0) myFish.ultFinisher = null;
   }
 
-  // Rùa Lăn Mai Đột Kích (Cấp 20): húc văng & gây ST kẻ địch chạm phải
   if (myFish.rollTimer > 0) {
     const nowR = Date.now(), rMy = getFishRadius(myFish.level, myFish.tier, myFish.sizeMult) + 25;
     aiFishes.forEach(ai => {
       if (nowR >= (rollHitCd[ai.id] || 0) && Math.hypot(ai.x - myFish.x, ai.y - myFish.y) < rMy + getFishRadius(ai.level, ai.tier, 1)) {
-        rollHitCd[ai.id] = nowR + 400;
-        damageAiFish(ai, myFish.rollDmg, false, ai.x, ai.y);
+        rollHitCd[ai.id] = nowR + 400; damageAiFish(ai, myFish.rollDmg, false, ai.x, ai.y);
       }
     });
     Object.values(bossesState).forEach(b => {
       if (b?.alive && nowR >= (rollHitCd[b.id] || 0) && Math.hypot(b.x - myFish.x, b.y - myFish.y) < rMy + 75) {
-        rollHitCd[b.id] = nowR + 450;
-        damageBoss(b.id, myFish.rollDmg, false, b.x, b.y - 50);
+        rollHitCd[b.id] = nowR + 450; damageBoss(b.id, myFish.rollDmg, false, b.x, b.y - 50);
       }
     });
   }
 
-  // Cận Vệ Hoàng Kim của Cá Vua (Cấp 20): xoay quanh & tự cắn kẻ địch gần
   const tNow = performance.now() / 1000;
   for (let i = myFish.kingGuards.length - 1; i >= 0; i--) {
     const g = myFish.kingGuards[i];
@@ -1244,14 +1221,12 @@ function updateHUD(eff) {
   document.getElementById("hud-exp-fill").style.width = `${Math.min(100, (myFish.exp / myFish.expNeed) * 100)}%`;
   document.getElementById("hud-exp-text").textContent = `EXP: ${Math.floor(myFish.exp)} / ${myFish.expNeed}`;
 
-  // Thông báo điểm nâng cấp Skill
   const spBanner = document.getElementById("skill-points-banner");
   if (myFish.skillPoints > 0) {
     document.getElementById("sp-count").textContent = myFish.skillPoints;
     spBanner.classList.remove("hidden");
   } else spBanner.classList.add("hidden");
 
-  // Cập nhật trạng thái 5 Ô Kỹ Năng (PC + Mobile + Nút nâng cấp +)
   const skills = getFishConfig(myFish.species).skills;
   skills.forEach((sk, idx) => {
     const unlocked = myFish.level >= sk.unlockLevel;

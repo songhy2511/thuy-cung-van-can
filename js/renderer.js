@@ -152,7 +152,6 @@ export class GameRenderer {
       if (p.ultActive && sp?.domainRadius) this._drawDomain(p.x, p.y, sp.domainRadius, t);
     });
 
-    // Thái Cổ Kết Giới (Skill Cuối Rùa Cấp 40)
     if (myFish?.ultFinisher?.type === "turtleBarrier") {
       this._drawTurtleBarrier(myFish.x, myFish.y, myFish.ultFinisher.radius, t);
     }
@@ -197,7 +196,6 @@ export class GameRenderer {
       }
     });
 
-    // Vòng sóng kỹ năng (Chấn động / Hoàng uy / Long ngâm)
     (visualRings || []).forEach(vr => {
       const a = vr.life / vr.maxLife;
       ctx.save(); ctx.globalAlpha = a * 0.85; ctx.translate(vr.x, vr.y);
@@ -211,7 +209,6 @@ export class GameRenderer {
       ctx.restore();
     });
 
-    // Đạn & Kiếm khí
     projectiles.forEach(pr => {
       ctx.save(); ctx.translate(pr.x, pr.y); ctx.rotate(pr.angle || Math.atan2(pr.vy, pr.vx));
       const imgObj = pr.spriteKey ? this.skillImgs[pr.spriteKey] : null;
@@ -255,7 +252,6 @@ export class GameRenderer {
     });
 
     if (myFish) {
-      // Cận Vệ Hoàng Kim xoay quanh Cá Vua
       (myFish.kingGuards || []).forEach(g => {
         const ga = t * 3.5 + g.angleOffset;
         const gx = myFish.x + Math.cos(ga) * 125, gy = myFish.y + Math.sin(ga) * 125;
@@ -279,7 +275,6 @@ export class GameRenderer {
       if (b?.alive && b.rangedStrike && nowMs <= b.rangedStrike.expiresAt) this._drawBossTornado(b.rangedStrike, nowMs, t);
     });
 
-    // Hải Vương Phán Quyết: Cột Sét Long Ấn giáng xuống đầu địch
     (judgmentPillars || []).forEach(jp => {
       const a = jp.life / jp.maxLife;
       ctx.save(); ctx.globalAlpha = a; ctx.translate(jp.x, jp.y);
@@ -295,7 +290,6 @@ export class GameRenderer {
       ctx.restore();
     });
 
-    // Vạn Kiếm Trảm Không: Vết kiếm chém đan xen khắp màn hình
     (screenSlashes || []).forEach(sl => {
       const a = sl.life / sl.maxLife;
       ctx.save(); ctx.globalAlpha = a; ctx.translate(sl.x, sl.y); ctx.rotate(sl.angle);
@@ -304,8 +298,7 @@ export class GameRenderer {
       } else {
         ctx.strokeStyle = "#e0f2fe"; ctx.lineWidth = 5 * a + 2;
         ctx.beginPath(); ctx.moveTo(-sl.len / 2, 0); ctx.lineTo(sl.len / 2, 0); ctx.stroke();
-        ctx.strokeStyle = "#38bdf8"; ctx.lineWidth = 12 * a;
-        ctx.globalAlpha = a * 0.4;
+        ctx.strokeStyle = "#38bdf8"; ctx.lineWidth = 12 * a; ctx.globalAlpha = a * 0.4;
         ctx.beginPath(); ctx.moveTo(-sl.len / 2, 0); ctx.lineTo(sl.len / 2, 0); ctx.stroke();
       }
       ctx.restore();
@@ -342,81 +335,6 @@ export class GameRenderer {
     ctx.restore();
   }
 
-    // Thức ăn
-    foods.forEach(f => {
-      if (!inView(f.x, f.y, 40)) return;
-      const pulse = Math.sin(t * 3.5 + f.phase) * 1.5;
-      const bobY = Math.sin(t * 2.5 + f.phase) * 3;
-      if (isImgOk(this.foodImg)) {
-        const size = (f.r * 5.2) + pulse * 2;
-        if (f.val > 20) {
-          ctx.save(); ctx.globalAlpha = 0.38 + Math.sin(t * 5 + f.phase) * 0.12;
-          ctx.fillStyle = "#ffd43b"; ctx.beginPath(); ctx.arc(f.x, f.y + bobY, size * 0.38, 0, Math.PI * 2); ctx.fill(); ctx.restore();
-        }
-        ctx.drawImage(this.foodImg.img, f.x - size / 2, f.y + bobY - size / 2, size, size);
-      } else {
-        ctx.fillStyle = f.color; ctx.beginPath(); ctx.arc(f.x, f.y, f.r + pulse, 0, Math.PI * 2); ctx.fill();
-      }
-    });
-
-    projectiles.forEach(pr => {
-      ctx.fillStyle = pr.color; ctx.beginPath(); ctx.arc(pr.x, pr.y, 10, 0, Math.PI * 2); ctx.fill();
-    });
-
-    afterimages.forEach(af => {
-      ctx.save();
-      ctx.globalAlpha = (af.life / af.maxLife) * 0.48;
-      this._drawFish(af.x, af.y, af.angle, af.species, af.level, af.tier, af.sizeMult, "", 1, 1, false, false, false, 0, false, false, 0, "", t, true);
-      ctx.restore();
-    });
-
-    const myDomRadius = (myFish && myFish.ultTimer > 0 && getFishConfig(myFish.species).ultimate.domainRadius) || 0;
-
-    aiFishes.forEach(ai => {
-      if (!inView(ai.x, ai.y, 120)) return;
-      this._drawFish(ai.x, ai.y, ai.angle, ai.species, ai.level, ai.tier, 1, ai.name, ai.hp, ai.maxHp, false, false, false, 0, false, !!ai.suppressed, 0, "", t, false);
-    });
-
-    Object.values(remotePlayers).forEach(p => {
-      const pSuppressed = myDomRadius > 0 && Math.hypot(p.x - myFish.x, p.y - myFish.y) <= myDomRadius;
-      this._drawFish(p.x, p.y, p.angle, p.species, p.level || 1, p.tier || 1, p.sizeMult || 1, p.name, p.hp, p.maxHp, p.uid === top1Uid, false, p.shield, p.chomping ? 0.8 : 0, !!p.ultActive, pSuppressed, p.stunned ? 1 : 0, "", t, false);
-    });
-
-    Object.values(bossesState).forEach(b => {
-      if (!b || !b.alive) return;
-      const bSuppressed = myDomRadius > 0 && Math.hypot(b.x - myFish.x, b.y - myFish.y) <= myDomRadius;
-      const isHungry = (b.hungryUntil || 0) > nowMs;
-      const isAbs = (b.absUntil || 0) > nowMs;
-      const bossBuffLabel = isAbs ? "🔥 SỨC MẠNH TUYỆT ĐỐI" : (isHungry ? "💢 CON MỒI TRƯỚC MẮT" : "");
-      this._drawFish(b.x, b.y, b.angle || 0, "boss", b.level || 10, b.tier || 2, 1.35, `${b.name} (Cấp ${b.level || b.tier * 5})`, b.hp, b.maxHp, false, true, isAbs, 0.35, isHungry || isAbs, bSuppressed, 0, bossBuffLabel, t, false);
-    });
-
-    if (myFish) {
-      const chomp = myFish.chompTimer > 0 ? myFish.chompTimer / 0.22 : 0;
-      const flyScale = myFish.knockbackFly ? (1 + Math.sin(myFish.knockbackFly.progress * Math.PI) * 0.45) : 1;
-      this._drawFish(myFish.x, myFish.y, myFish.angle, myFish.species, myFish.level, myFish.tier, myFish.sizeMult * flyScale, myFish.name, myFish.hp, effStats.maxHp, myFish.uid === top1Uid, false, myFish.shieldTimer > 0, chomp, myFish.ultTimer > 0, domainCheck.suppressed, myFish.stunTimer, "", t, false);
-    }
-
-    Object.values(bossesState).forEach(b => {
-      if (!b || !b.alive || !b.rangedStrike) return;
-      if (nowMs <= b.rangedStrike.expiresAt) {
-        this._drawBossTornado(b.rangedStrike, nowMs, t);
-      }
-    });
-
-    this._drawBiteEffects(biteEffects);
-    this._drawReflectEffects(reflectEffects);
-
-    floatingTexts.forEach(ft => {
-      ctx.font = `bold ${Math.round(16 * (ft.scale || 1))}px Segoe UI`;
-      ctx.fillStyle = ft.color; ctx.textAlign = "center";
-      ctx.strokeStyle = "rgba(0,0,0,0.65)"; ctx.lineWidth = 3;
-      ctx.strokeText(ft.text, ft.x, ft.y); ctx.fillText(ft.text, ft.x, ft.y);
-    });
-
-    ctx.restore();
-  }
-
   renderMinimap(myFish, remotePlayers, bossesState, top1Uid) {
     const mw = this.miniLogicalSize, mctx = this.miniCtx;
     mctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
@@ -450,9 +368,7 @@ export class GameRenderer {
       ctx.drawImage(this.bossVortexImg.img, -radius, -radius, radius * 2, radius * 2);
     } else {
       const g = ctx.createRadialGradient(0, 0, 20, 0, 0, radius);
-      g.addColorStop(0, "rgba(56, 189, 248, 0.05)");
-      g.addColorStop(0.6, "rgba(14, 165, 233, 0.35)");
-      g.addColorStop(1, "rgba(186, 230, 253, 0.7)");
+      g.addColorStop(0, "rgba(56, 189, 248, 0.05)"); g.addColorStop(0.6, "rgba(14, 165, 233, 0.35)"); g.addColorStop(1, "rgba(186, 230, 253, 0.7)");
       ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.fill();
       ctx.strokeStyle = "#e0f2fe"; ctx.lineWidth = 3;
       for (let arm = 0; arm < 4; arm++) {
@@ -475,9 +391,7 @@ export class GameRenderer {
       ctx.drawImage(this.bossDomainImg.img, -radius, -radius, radius * 2, radius * 2);
     } else {
       const g = ctx.createRadialGradient(0, 0, radius * 0.2, 0, 0, radius);
-      g.addColorStop(0, "rgba(126, 34, 206, 0.15)");
-      g.addColorStop(0.75, "rgba(190, 18, 60, 0.42)");
-      g.addColorStop(1, "rgba(244, 63, 94, 0.85)");
+      g.addColorStop(0, "rgba(126, 34, 206, 0.15)"); g.addColorStop(0.75, "rgba(190, 18, 60, 0.42)"); g.addColorStop(1, "rgba(244, 63, 94, 0.85)");
       ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.fill();
       ctx.rotate(t * 0.3); ctx.strokeStyle = "#fda4af"; ctx.lineWidth = 5; ctx.setLineDash([28, 16]);
       ctx.beginPath(); ctx.arc(0, 0, radius - 6, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
@@ -491,7 +405,6 @@ export class GameRenderer {
     ctx.strokeStyle = isTriggered ? "#38bdf8" : "#facc15"; ctx.lineWidth = 3;
     ctx.fillStyle = isTriggered ? "rgba(56, 189, 248, 0.25)" : "rgba(250, 204, 21, 0.18)";
     ctx.beginPath(); ctx.arc(0, 0, strike.radius, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-
     if (isTriggered) {
       if (isImgOk(this.bossTornadoImg)) {
         const w = strike.radius * 2.4, h = strike.radius * 3.0;
@@ -615,46 +528,27 @@ export class GameRenderer {
     ctx.restore();
   }
 
-  // Khiên Đất Tổ Ong nhẹ & tối ưu (không dùng clip() tránh giật/đơ)
   _drawHoneycombShield(r, t) {
     const ctx = this.ctx;
     const safeR = Math.max(12, Math.min(200, r || 24));
     const shieldR = safeR * 1.48;
     ctx.save();
-    ctx.beginPath();
-    ctx.arc(0, 0, shieldR, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(234, 179, 8, 0.25)";
-    ctx.fill();
+    ctx.beginPath(); ctx.arc(0, 0, shieldR, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(234, 179, 8, 0.25)"; ctx.fill();
 
-    // Vẽ tổ ong 7 ô lục giác gọn nhẹ ngay giữa khiên
-    const hexR = Math.max(10, shieldR * 0.34);
-    const dx = hexR * 1.5;
-    const dy = hexR * 1.732;
-    const offsets = [
-      [0, 0],
-      [0, -dy], [0, dy],
-      [-dx, -dy * 0.5], [-dx, dy * 0.5],
-      [dx, -dy * 0.5], [dx, dy * 0.5]
-    ];
-    ctx.strokeStyle = "rgba(253, 224, 71, 0.85)";
-    ctx.lineWidth = 2;
+    const hexR = Math.max(10, shieldR * 0.34), dx = hexR * 1.5, dy = hexR * 1.732;
+    const offsets = [[0, 0], [0, -dy], [0, dy], [-dx, -dy * 0.5], [-dx, dy * 0.5], [dx, -dy * 0.5], [dx, dy * 0.5]];
+    ctx.strokeStyle = "rgba(253, 224, 71, 0.85)"; ctx.lineWidth = 2;
     offsets.forEach(([ox, oy]) => {
       ctx.beginPath();
       for (let k = 0; k < 6; k++) {
-        const ang = (Math.PI / 3) * k;
-        const vx = ox + Math.cos(ang) * hexR * 0.92;
-        const vy = oy + Math.sin(ang) * hexR * 0.92;
+        const ang = (Math.PI / 3) * k, vx = ox + Math.cos(ang) * hexR * 0.92, vy = oy + Math.sin(ang) * hexR * 0.92;
         if (k === 0) ctx.moveTo(vx, vy); else ctx.lineTo(vx, vy);
       }
-      ctx.closePath();
-      ctx.stroke();
+      ctx.closePath(); ctx.stroke();
     });
-
-    ctx.strokeStyle = "#facc15";
-    ctx.lineWidth = 3.5;
-    ctx.beginPath();
-    ctx.arc(0, 0, shieldR + Math.sin(t * 10) * 2, 0, Math.PI * 2);
-    ctx.stroke();
+    ctx.strokeStyle = "#facc15"; ctx.lineWidth = 3.5;
+    ctx.beginPath(); ctx.arc(0, 0, shieldR + Math.sin(t * 10) * 2, 0, Math.PI * 2); ctx.stroke();
     ctx.restore();
   }
 
