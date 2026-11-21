@@ -1393,3 +1393,199 @@ body, html {
 }
 .au-sub { font-size: 11px; color: #9ec9e6; }
 .au-btns { display: flex; gap: 6px; }
+
+/* ===== GIAO DIỆN MOBA CHUẨN LIÊN QUÂN (CHỈ ÁP DỤNG CHO MOBILE) ===== */
+.btn-fs-mini {
+  display: none;
+  width: 34px;
+  height: 30px;
+  border-radius: 8px;
+  background: rgba(5, 25, 45, 0.85);
+  border: 1.5px solid #38bdf8;
+  color: #e9f5ff;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.rotate-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 16, 30, 0.96);
+  z-index: 999;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.rotate-box {
+  background: #072642;
+  border: 2px solid #38bdf8;
+  border-radius: 18px;
+  padding: 26px 20px;
+  text-align: center;
+  max-width: 340px;
+  width: 100%;
+}
+.rotate-icon {
+  font-size: 52px;
+  margin-bottom: 10px;
+  animation: tiltPhone 1.6s ease-in-out infinite;
+}
+@keyframes tiltPhone {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(-90deg); }
+}
+.rotate-box h3 { color: #ffd43b; margin-bottom: 8px; font-size: 18px; }
+.rotate-box p { color: #bae6fd; font-size: 13px; margin-bottom: 16px; }
+
+/* Khi là thiết bị Mobile */
+body.mobile-mode .btn-fs-mini { display: flex; align-items: center; justify-content: center; }
+
+/* Ẩn bảng skill PC & banner điểm skill thừa trên thanh máu khi chơi Mobile */
+body.mobile-mode #hud-skills-bar,
+body.mobile-mode #skill-points-banner {
+  display: none !important;
+}
+
+/* Bắt buộc màn hình ngang khi đang ở trong trận trên Mobile */
+@media (orientation: portrait) {
+  body.mobile-mode #game-screen.active .rotate-overlay {
+    display: flex;
+  }
+}
+
+/* Cụm nút MOBA bên phải (vòng cung 2 tầng ôm quanh nút Cắn) */
+.moba-controls-right {
+  position: fixed;
+  right: 14px;
+  bottom: 10px;
+  width: 245px;
+  height: 215px;
+  pointer-events: none;
+}
+
+.moba-bite-btn {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  width: 78px !important;
+  height: 78px !important;
+  pointer-events: auto;
+}
+
+.moba-skills-arc {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.m-skill-wrap {
+  position: absolute;
+  width: 52px;
+  height: 52px;
+  pointer-events: auto;
+}
+
+/* Tọa độ vòng cung chuẩn Liên Quân cho 5 ô chiêu */
+.m-skill-wrap.slot-0 { right: 98px;  bottom: 10px; }  /* Skill 1 (Cấp 1) */
+.m-skill-wrap.slot-1 { right: 86px;  bottom: 76px; }  /* Skill 2 (Cấp 10) */
+.m-skill-wrap.slot-2 { right: 16px;  bottom: 98px; }  /* Skill 3 (Cấp 20) */
+.m-skill-wrap.slot-3 { right: 162px; bottom: 42px; }  /* Đặc Biệt (Cấp 30) */
+.m-skill-wrap.slot-4 { right: 144px; bottom: 114px; } /* Skill Cuối (Cấp 40) */
+
+.m-skill-wrap .m-skill-btn {
+  width: 52px;
+  height: 52px;
+  position: relative;
+}
+.m-skill-wrap.slot-4 .m-skill-btn {
+  width: 54px;
+  height: 54px;
+}
+
+/* Nút (+) tăng cấp chiêu nằm ngay phía trên mỗi nút chiêu */
+.m-upg-btn {
+  position: absolute;
+  top: -19px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 26px;
+  height: 19px;
+  border-radius: 6px;
+  border: 1.5px solid #fef08a;
+  background: linear-gradient(180deg, #facc15, #ca8a04);
+  color: #111;
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  box-shadow: 0 0 10px rgba(250, 204, 21, 0.9);
+  touch-action: none;
+}
+.m-upg-btn.hidden { display: none; }
+
+.m-lv-tag {
+  font-size: 8px;
+  font-weight: 900;
+  color: #fde047;
+  line-height: 1;
+}
+
+/* Tinh chỉnh vị trí Joystick, Minimap, Thanh máu cho Mobile màn ngang cực gọn */
+body.mobile-mode .joystick-zone {
+  left: 16px;
+  bottom: 14px;
+  width: 132px;
+  height: 132px;
+}
+body.mobile-mode .joystick-base {
+  width: 106px;
+  height: 106px;
+}
+body.mobile-mode .joystick-knob {
+  width: 44px;
+  height: 44px;
+}
+body.mobile-mode .hud-bottom-center {
+  bottom: 8px;
+  width: 38%;
+  max-width: 300px;
+  gap: 3px;
+}
+body.mobile-mode .evo-label {
+  font-size: 10px;
+  padding: 1px 10px;
+}
+body.mobile-mode .bars-row {
+  padding: 5px 7px;
+}
+body.mobile-mode .bar-wrap {
+  height: 16px;
+}
+body.mobile-mode .bar-text {
+  font-size: 10px;
+}
+body.mobile-mode #minimap-canvas {
+  width: 82px;
+  height: 82px;
+}
+body.mobile-mode .minimap-legend {
+  display: none;
+}
+body.mobile-mode .btn-hamburger,
+body.mobile-mode .btn-admin-mini {
+  width: 34px;
+  height: 30px;
+}
+body.mobile-mode .hud-top-right {
+  width: 142px;
+  top: 6px;
+  right: 8px;
+}
+body.mobile-mode .chat-widget {
+  top: 106px;
+  left: 8px;
+}

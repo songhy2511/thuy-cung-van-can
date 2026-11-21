@@ -95,9 +95,36 @@ document.getElementById("btn-open-admin-game").addEventListener("click", () => {
   adminPanel.open();
 });
 
+// ==================== MOBILE FULLSCREEN & LANDSCAPE ====================
 function refreshMobileControls() {
-  document.getElementById("mobile-controls").classList.toggle("hidden", !(input.inputMode === "touch" || input.isTouchDevice));
+  const isMob = input.inputMode === "touch" || input.isTouchDevice;
+  document.body.classList.toggle("mobile-mode", isMob);
+  document.getElementById("mobile-controls").classList.toggle("hidden", !isMob);
 }
+refreshMobileControls();
+
+async function enterMobileFullscreenAndLandscape() {
+  try {
+    const el = document.documentElement;
+    if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+      if (el.requestFullscreen) await el.requestFullscreen();
+      else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+    }
+    if (screen.orientation && screen.orientation.lock) {
+      await screen.orientation.lock("landscape");
+    }
+  } catch (err) {
+    // Một số trình duyệt (iOS Safari) không hỗ trợ khóa bằng code -> người dùng tự xoay ngang máy
+  }
+  setTimeout(() => renderer.resize(), 180);
+}
+
+const btnForceLand = document.getElementById("btn-force-landscape");
+if (btnForceLand) btnForceLand.addEventListener("click", enterMobileFullscreenAndLandscape);
+const btnMobFs = document.getElementById("btn-mobile-fs");
+if (btnMobFs) btnMobFs.addEventListener("click", enterMobileFullscreenAndLandscape);
+window.addEventListener("orientationchange", () => setTimeout(() => renderer.resize(), 200));
+document.addEventListener("fullscreenchange", () => setTimeout(() => renderer.resize(), 150));
 
 // ==================== DAILY QUESTS & PROFILE ====================
 const getTodayDateVN = () => new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Ho_Chi_Minh" });
@@ -344,7 +371,7 @@ function getEffectiveStats() {
   };
 }
 
-// ==================== 5-SKILL BAR UI BUILDER ====================
+// ==================== 5-SKILL BAR UI BUILDER (PC + MOBILE MOBA) ====================
 function buildSkillBarsUI() {
   const cfg = getFishConfig(myFish.species);
   const pcBar = document.getElementById("hud-skills-bar"), mobBar = document.getElementById("mobile-skills-bar");
@@ -352,7 +379,10 @@ function buildSkillBarsUI() {
 
   cfg.skills.forEach((sk, idx) => {
     const typeClass = sk.isUltimate ? "ultimate-slot" : (sk.isSpecial ? "special-slot" : "");
-    const wrap = document.createElement("div"); wrap.className = "skill-slot-wrap";
+
+    // 1. Ô Skill bản PC
+    const wrap = document.createElement("div");
+    wrap.className = "skill-slot-wrap";
     wrap.innerHTML = `
       <button type="button" class="btn-upg-skill hidden" id="upg-sk-${idx}" title="Nâng cấp ${sk.name}">+</button>
       <div class="skill-slot ${typeClass}" id="pc-sk-${idx}">
@@ -366,15 +396,26 @@ function buildSkillBarsUI() {
     wrap.querySelector(`#upg-sk-${idx}`).addEventListener("click", (e) => { e.stopPropagation(); upgradeSkillSlot(idx); });
     pcBar.appendChild(wrap);
 
-    const mBtn = document.createElement("button");
-    mBtn.type = "button"; mBtn.className = `m-skill-btn ${typeClass}`; mBtn.id = `mob-sk-${idx}`;
-    mBtn.innerHTML = `<span style="font-size:15px">${sk.icon}</span><span>${SKILL_KEYS[idx]}</span><div class="m-cd" id="mob-sk-cd-${idx}"></div>`;
-    mBtn.addEventListener("touchstart", (e) => {
+    // 2. Nút Skill vòng cung MOBA bản Mobile (có nút + nâng cấp ngay phía trên)
+    const mWrap = document.createElement("div");
+    mWrap.className = `m-skill-wrap slot-${idx}`;
+    mWrap.innerHTML = `
+      <button type="button" class="m-upg-btn hidden" id="mob-upg-sk-${idx}">+</button>
+      <button type="button" class="m-skill-btn ${typeClass}" id="mob-sk-${idx}">
+        <span style="font-size:17px;line-height:1">${sk.icon}</span>
+        <span class="m-lv-tag" id="mob-sk-lv-${idx}">Lv.1</span>
+        <div class="m-cd" id="mob-sk-cd-${idx}"></div>
+      </button>
+    `;
+    mWrap.querySelector(`#mob-sk-${idx}`).addEventListener("touchstart", (e) => {
       e.preventDefault(); e.stopPropagation();
-      if (myFish.skillPoints > 0 && myFish.level >= sk.unlockLevel && myFish.skillLevels[idx] < MAX_SKILL_LEVEL && e.touches.length === 2) upgradeSkillSlot(idx);
-      else triggerSkillSlot(idx);
+      triggerSkillSlot(idx);
     }, { passive: false });
-    mobBar.appendChild(mBtn);
+    mWrap.querySelector(`#mob-upg-sk-${idx}`).addEventListener("touchstart", (e) => {
+      e.preventDefault(); e.stopPropagation();
+      upgradeSkillSlot(idx);
+    }, { passive: false });
+    mobBar.appendChild(mWrap);
   });
 }
 
@@ -390,6 +431,8 @@ function upgradeSkillSlot(idx) {
 document.getElementById("btn-play").addEventListener("click", startMatch);
 
 async function startMatch() {
+  if (input.isTouchDevice) enterMobileFullscreenAndLandscape();
+
   const cfg = getFishConfig(selectedFishId);
   const entryCost = cfg.id === "kingfish" ? (LIVE_CONFIG.kingFishCost ?? cfg.cost) : cfg.cost;
   if (entryCost > 0) {
@@ -909,7 +952,6 @@ function updateGame(dt) {
   const eff = getEffectiveStats();
   if (myFish.hp > eff.maxHp) myFish.hp = eff.maxHp;
 
-  // Đồng bộ số lượng Mồi, Cá AI, Item Buff theo LIVE_CONFIG từ Admin Panel
   const ev = getActiveEventConfig();
   const desiredFood = Math.round((LIVE_CONFIG.foodCount || 3200) * (ev?.modifiers?.foodMult || 1));
   while (foods.length < desiredFood) foods.push(spawnFood());
@@ -1251,12 +1293,15 @@ function updateHUD(eff) {
   skills.forEach((sk, idx) => {
     const unlocked = myFish.level >= sk.unlockLevel, cd = myFish.skillCooldowns[idx], skLv = myFish.skillLevels[idx];
     const isSpecActive = sk.isSpecial && myFish.ultTimer > 0, isFinActive = sk.isUltimate && !!myFish.ultFinisher;
-    const pcEl = document.getElementById(`pc-sk-${idx}`), ovEl = document.getElementById(`pc-sk-ov-${idx}`), lvEl = document.getElementById(`pc-sk-lv-${idx}`);
-    const upgBtn = document.getElementById(`upg-sk-${idx}`), mobEl = document.getElementById(`mob-sk-${idx}`), mobCd = document.getElementById(`mob-sk-cd-${idx}`);
 
+    const pcEl = document.getElementById(`pc-sk-${idx}`), ovEl = document.getElementById(`pc-sk-ov-${idx}`), lvEl = document.getElementById(`pc-sk-lv-${idx}`);
+    const upgBtn = document.getElementById(`upg-sk-${idx}`);
+    const mobEl = document.getElementById(`mob-sk-${idx}`), mobCd = document.getElementById(`mob-sk-cd-${idx}`);
+    const mobUpg = document.getElementById(`mob-upg-sk-${idx}`), mobLv = document.getElementById(`mob-sk-lv-${idx}`);
+
+    // Cập nhật PC
     if (lvEl) lvEl.textContent = unlocked ? `Lv.${skLv}/${MAX_SKILL_LEVEL}` : `Cấp ${sk.unlockLevel}`;
     if (upgBtn) upgBtn.classList.toggle("hidden", !(unlocked && myFish.skillPoints > 0 && skLv < MAX_SKILL_LEVEL));
-
     if (pcEl && ovEl) {
       pcEl.classList.toggle("locked", !unlocked);
       pcEl.classList.toggle("active-skill", isSpecActive || isFinActive);
@@ -1266,6 +1311,10 @@ function updateHUD(eff) {
       else if (cd > 0) { ovEl.style.opacity = "1"; ovEl.style.background = "rgba(0,0,0,0.75)"; ovEl.textContent = `${cd.toFixed(1)}s`; }
       else { ovEl.style.opacity = "0"; }
     }
+
+    // Cập nhật Mobile MOBA
+    if (mobLv) mobLv.textContent = unlocked ? `Lv.${skLv}` : `C.${sk.unlockLevel}`;
+    if (mobUpg) mobUpg.classList.toggle("hidden", !(unlocked && myFish.skillPoints > 0 && skLv < MAX_SKILL_LEVEL));
     if (mobEl && mobCd) {
       mobEl.classList.toggle("locked", !unlocked);
       if (!unlocked) { mobCd.style.opacity = "1"; mobCd.textContent = `🔒${sk.unlockLevel}`; }
@@ -1283,7 +1332,6 @@ function updateHUD(eff) {
   const all = [myFish, ...Object.values(remotePlayers)].filter(Boolean).sort((a, b) => (b.score || 0) - (a.score || 0));
   document.getElementById("ingame-leaderboard").innerHTML = all.slice(0, 5).map((p, i) => `<div class="lb-row ${p.uid === myFish.uid ? "me" : ""}"><span>${i === 0 ? "👑" : `${i + 1}.`} ${escapeHtml(p.name)}</span><span>${Math.round(p.score || 0)}</span></div>`).join("");
 
-  // Hiển thị toàn bộ Boss mặc định + Boss do Admin triệu hồi thêm
   const allBosses = Object.values(bossesState).filter(Boolean);
   document.getElementById("boss-status-list").innerHTML = allBosses.map((b) => {
     if (b.alive) return `<div class="boss-row"><span>👹 ${escapeHtml(b.name)}</span><span>${Math.round(b.hp)} HP</span></div>`;

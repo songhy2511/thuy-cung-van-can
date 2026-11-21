@@ -83,6 +83,7 @@
           <span></span><span></span><span></span>
         </button>
         <button id="btn-open-admin-game" class="btn-admin-mini hidden" type="button" title="Mở Admin Panel">🛠️</button>
+        <button id="btn-mobile-fs" class="btn-fs-mini" type="button" title="Toàn màn hình">⛶</button>
       </div>
       <div class="minimap-wrap">
         <canvas id="minimap-canvas" width="150" height="150"></canvas>
@@ -127,7 +128,17 @@
       <div id="buff-choices" class="buff-cards"></div>
     </div>
 
-    <!-- ĐIỀU KHIỂN CẢM ỨNG CHO ĐIỆN THOẠI -->
+    <!-- YÊU CẦU XOAY NGANG & TOÀN MÀN HÌNH (CHỈ HIỆN TRÊN MOBILE KHI CẦM DỌC) -->
+    <div id="rotate-overlay" class="rotate-overlay">
+      <div class="rotate-box">
+        <div class="rotate-icon">📱↻</div>
+        <h3>Xoay ngang điện thoại để chiến đấu!</h3>
+        <p>Chế độ toàn màn hình ngang giúp điều khiển chuẩn MOBA mượt nhất.</p>
+        <button id="btn-force-landscape" class="btn-play" type="button">🖥️ Toàn Màn Hình & Xoay Ngang</button>
+      </div>
+    </div>
+
+    <!-- ĐIỀU KHIỂN CẢM ỨNG CHUẨN MOBA (CHỈ HIỆN TRÊN MOBILE) -->
     <div id="mobile-controls" class="mobile-controls hidden">
       <div id="joystick-zone" class="joystick-zone">
         <div id="joystick-base" class="joystick-base">
@@ -135,9 +146,9 @@
         </div>
       </div>
 
-      <div class="mobile-actions-wrap">
-        <div id="mobile-skills-bar" class="mobile-skills-bar"></div>
-        <button id="btn-mobile-bite" class="btn-touch-action btn-touch-bite" type="button">
+      <div class="moba-controls-right">
+        <div id="mobile-skills-bar" class="moba-skills-arc"></div>
+        <button id="btn-mobile-bite" class="btn-touch-action btn-touch-bite moba-bite-btn" type="button">
           <span class="touch-icon">🦷</span>
           <span class="touch-label">CẮN</span>
         </button>
