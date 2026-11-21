@@ -1589,3 +1589,27 @@ body.mobile-mode .chat-widget {
   top: 106px;
   left: 8px;
 }
+
+/* ===== FIX LỖI KHUNG CHAT TÀNG HÌNH CHẶN CẢM ỨNG NGOÀI SẢNH MOBILE ===== */
+.chat-widget {
+  pointer-events: none !important;
+}
+.chat-toggle-btn,
+.chat-box {
+  pointer-events: auto;
+}
+body.mobile-mode .chat-widget.lobby-pos {
+  top: auto !important;
+  left: auto !important;
+  right: 14px !important;
+  bottom: 14px !important;
+}
+body.mobile-mode .chat-widget:not(.lobby-pos) {
+  top: 106px !important;
+  left: 8px !important;
+  right: auto !important;
+  bottom: auto !important;
+}
+#lobby-screen {
+  touch-action: pan-y;
+}
