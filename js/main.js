@@ -47,6 +47,8 @@ const recentPvpKillReward = {};
 const handledTornadoIds = new Set();
 const lastVortexHitAt = {};
 const bossMeleeCooldown = {};
+const bossPoisonTick = {};
+const pvpPoisonTick = {};
 
 // ==================== KHỞI TẠO ENGINE & INPUT ====================
 const canvas = document.getElementById("game-canvas");
@@ -422,7 +424,7 @@ async function startMatch() {
   floatingTexts = []; projectiles = []; biteEffects = []; reflectEffects = []; afterimages = [];
   poisonClouds = []; poisonDropTimer = 0;
   handledTornadoIds.clear();
-  [localBossKillLock, recentPvpKillReward, lastVortexHitAt, bossMeleeCooldown].forEach(o => Object.keys(o).forEach(k => delete o[k]));
+  [localBossKillLock, recentPvpKillReward, lastVortexHitAt, bossMeleeCooldown, bossPoisonTick, pvpPoisonTick].forEach(o => Object.keys(o).forEach(k => delete o[k]));
 
   foods = Array.from({ length: BASE_FOOD_COUNT }, () => spawnFood());
   mapItems = Array.from({ length: MAP_ITEM_COUNT }, () => spawnMapItem());
@@ -719,7 +721,7 @@ function dealAoEDamage(cx, cy, radius, dmg) {
 
 function damageBoss(bossId, dmg, isCrit = false, fxX = null, fxY = null) {
   const b = bossesState[bossId];
-  if (!b || !b.alive || localBossKillLock[bossId] || !Number.isFinite(dmg) || dmg <= 0) return;
+  if (!b || !b.alive || b.hp <= 0 || localBossKillLock[bossId] || !Number.isFinite(dmg) || dmg <= 0) return;
 
   const isAbs = (b.absUntil || 0) > Date.now();
   if (!isAbs) {
@@ -731,7 +733,7 @@ function damageBoss(bossId, dmg, isCrit = false, fxX = null, fxY = null) {
     }
   }
 
-  svc.runBossDamageTransaction(bossId, currentUser.uid, dmg, (res) => {
+  svc.runBossDamageTransaction(bossId, currentUser.uid, dmg, b, (res) => {
     if (res.absorbed) addFloatingText(b.x, b.y - 65, `💚 +${res.healAmount} HP (Hấp thụ)`, "#51cf66", 1.15);
     else if (res.killed) {
       localBossKillLock[bossId] = true;
@@ -1039,9 +1041,10 @@ function updateGame(dt) {
 
   // Vệt độc gây sát thương lên người chơi khác (mỗi 0.6s)
   if (poisonClouds.length > 0) {
+    const nowP = Date.now();
     Object.values(remotePlayers).forEach(p => {
-      if ((!p._pTick || Date.now() - p._pTick > 600) && poisonClouds.some(pc => Math.hypot(pc.x - p.x, pc.y - p.y) <= pc.radius + 18)) {
-        p._pTick = Date.now();
+      if (nowP >= (pvpPoisonTick[p.uid] || 0) && poisonClouds.some(pc => Math.hypot(pc.x - p.x, pc.y - p.y) <= pc.radius + 18)) {
+        pvpPoisonTick[p.uid] = nowP + 600;
         svc.pushPvpHit(p.uid, { fromUid: myFish.uid, fromName: myFish.name, dmg: Math.max(8, Math.round(eff.dmg * 0.4)), crit: false, isReflectFx: false });
       }
     });
@@ -1055,9 +1058,9 @@ function updateGame(dt) {
     const bossSup = domRadius > 0 && dist <= domRadius;
 
     // Vệt độc gây sát thương lên Boss (mỗi 0.6s)
-    if (poisonClouds.length > 0 && (!b._pTick || nowMs - b._pTick > 600)) {
+    if (poisonClouds.length > 0 && nowMs >= (bossPoisonTick[b.id] || 0)) {
       if (poisonClouds.some(pc => Math.hypot(pc.x - b.x, pc.y - b.y) <= pc.radius + bossR)) {
-        b._pTick = nowMs;
+        bossPoisonTick[b.id] = nowMs + 600;
         damageBoss(b.id, Math.max(10, eff.dmg * 0.45), false, b.x, b.y - 50);
       }
     }

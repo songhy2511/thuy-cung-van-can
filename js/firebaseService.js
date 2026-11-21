@@ -169,48 +169,52 @@ export function notifyBossDealtDamage(bossId) {
   return update(ref(db, `rooms/main/bosses/${bossId}`), { lastDealtDmgAt: Date.now() }).catch(() => {});
 }
 
-export function runBossDamageTransaction(bossId, uid, dmg, onResult) {
-  const bossRef = ref(db, `rooms/main/bosses/${bossId}`);
+export function runBossDamageTransaction(bossId, uid, dmg, bossMeta, onResult) {
+  const now = Date.now();
+  const isAbs = (bossMeta?.absUntil || 0) > now;
+  // Chỉ transaction trực tiếp trên /hp để không bao giờ xung đột với cập nhật tọa độ x, y
+  const hpRef = ref(db, `rooms/main/bosses/${bossId}/hp`);
   let killedByThisTx = false;
-  let absorbedByBoss = false;
-  let healAmount = 0;
+  let healedAmount = 0;
 
-  return runTransaction(bossRef, (curr) => {
+  return runTransaction(hpRef, (currHp) => {
     killedByThisTx = false;
-    absorbedByBoss = false;
-    healAmount = 0;
-    if (!curr) return curr;
-    if (!curr.alive || curr.hp <= 0) return;
+    healedAmount = 0;
+    if (currHp === null || currHp === undefined) return currHp;
+    if (currHp <= 0) return;
 
-    const now = Date.now();
-    // 3. Skill "Sức mạnh tuyệt đối": Sau 10s kể từ khi vào giao tranh/đuổi theo (còn người chơi trong tầm nhìn)
-      const activeCombatAt = b.combatStartedAt || b.chaseStartedAt || 0;
-      if (!isAbs && activeCombatAt > 0 && now - activeCombatAt >= 10000 && now >= (b.absCdUntil || 0)) {
-        patch.absUntil = now + 10000;
-        patch.absCdUntil = now + 20000; // Hồi 10s sau khi hết trạng thái để kích hoạt thường xuyên hơn
-        patch.combatStartedAt = now + 10000;
-      }
-
-    curr.hp -= Math.round(dmg);
-    curr.lastHitBy = uid;
-    if (!curr.combatStartedAt) {
-      curr.combatStartedAt = now;
+    if (isAbs) {
+      const maxHp = bossMeta?.maxHp || 1500;
+      healedAmount = Math.round(dmg);
+      return Math.min(maxHp, currHp + healedAmount);
     }
-    if (curr.hp <= 0) {
-      curr.hp = 0;
-      curr.alive = false;
-      curr.respawnAt = now + BOSS_RESPAWN_MS;
+
+    const nextHp = currHp - Math.round(dmg);
+    if (nextHp <= 0) {
       killedByThisTx = true;
+      return 0;
     }
-    return curr;
+    return nextHp;
   }).then((res) => {
     if (!res.committed) return;
-    if (absorbedByBoss) {
-      onResult({ absorbed: true, healAmount, boss: res.snapshot.val() });
-    } else if (killedByThisTx) {
-      onResult({ killed: true, boss: res.snapshot.val() });
+    if (isAbs) {
+      onResult({ absorbed: true, healAmount: healedAmount, boss: bossMeta });
+      return;
     }
-  }).catch(() => {});
+    if (!bossMeta?.combatStartedAt) {
+      update(ref(db, `rooms/main/bosses/${bossId}`), { combatStartedAt: Date.now() }).catch(() => {});
+    }
+    if (killedByThisTx) {
+      update(ref(db, `rooms/main/bosses/${bossId}`), {
+        alive: false,
+        respawnAt: Date.now() + BOSS_RESPAWN_MS,
+        lastHitBy: uid
+      }).catch(() => {});
+      onResult({ killed: true, boss: bossMeta });
+    }
+  }).catch((err) => {
+    console.warn("Boss dmg tx error:", err);
+  });
 }
 
 export function hostUpdateWorld(bossesState, eventState, allPlayers, highestTier) {
