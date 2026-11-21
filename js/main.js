@@ -1,7 +1,8 @@
 import {
   MAP_SIZE, BASE_FOOD_COUNT, AI_FISH_COUNT, MAP_ITEM_COUNT, MAP_ITEM_RESPAWN_MS, MAP_ITEM_DURATION,
   EVO_TIERS, BOSS_SPAWNS, UPGRADE_DEFS, QUEST_TEMPLATES,
-  BOSS_VISION_RADIUS, BOSS_VORTEX_RADIUS, MAX_UPGRADE_LEVEL, MAX_SKILL_LEVEL, SKILL_KEYS, calcExpNeedForLevel
+  BOSS_VISION_RADIUS, BOSS_VORTEX_RADIUS, MAX_UPGRADE_LEVEL, MAX_SKILL_LEVEL, SKILL_KEYS,
+  REVIVE_COST, REVIVE_INVULN_SEC, calcExpNeedForLevel
 } from "./config.js";
 import {
   getFishConfig, getFishSpecialSkill, getAllFishConfigs, getBuffList, getBuffConfig,
@@ -22,7 +23,7 @@ let bossesState = {}, eventState = null, roomMeta = { startedAt: Date.now() };
 
 let biteHold = false, camera = { x: MAP_SIZE / 2, y: MAP_SIZE / 2 };
 let sessionStats = { foodEaten: 0, fishKilled: 0, bossKilled: 0, reachedTier2: 0, coinsEarned: 0 };
-let pendingLevelUps = 0, choosingBuff = false;
+let pendingLevelUps = 0, choosingBuff = false, awaitingRevive = false;
 
 const localBossKillLock = {}, recentPvpKillReward = {}, handledTornadoIds = new Set();
 const lastVortexHitAt = {}, bossMeleeCooldown = {}, bossPoisonTick = {}, pvpPoisonTick = {};
@@ -199,7 +200,9 @@ function getHighestPlayerLevel() {
 function isImmuneToCC(fish) {
   if (!fish) return false;
   const spec = getFishSpecialSkill(fish.species);
-  return (fish.ultTimer > 0 && !!spec?.domainRadius) || (fish.tempBuffs?.ironman || 0) > 0;
+  return (fish.ultTimer > 0 && !!spec?.domainRadius)
+    || (fish.tempBuffs?.ironman || 0) > 0
+    || (fish.reviveInvulnTimer || 0) > 0;
 }
 
 function applyStunToMe(seconds) {
@@ -366,13 +369,14 @@ async function startMatch() {
     skillLevels: [1, 1, 1, 1, 1],
     skillPoints: 0,
     ultTimer: 0, ultFinisher: null, kingGuards: [],
+    hasRevived: false, reviveInvulnTimer: 0,
     shieldTimer: 3.0, stunTimer: 0, dashTimer: 0, rollTimer: 0, rollDmg: 0, reflectTimer: 0,
     biteCooldown: 0, chompTimer: 0,
     buffCounts: {}, tempBuffs: {}, knockbackFly: null, joinedAt: Date.now()
   };
 
   sessionStats = { foodEaten: 0, fishKilled: 0, bossKilled: 0, reachedTier2: 0, coinsEarned: 0 };
-  pendingLevelUps = 0; choosingBuff = false; biteHold = false; loopErrorLogged = false;
+  pendingLevelUps = 0; choosingBuff = false; awaitingRevive = false; biteHold = false; loopErrorLogged = false;
   input.resetJoystick();
   floatingTexts = []; projectiles = []; biteEffects = []; reflectEffects = []; afterimages = [];
   visualRings = []; screenSlashes = []; judgmentPillars = [];
@@ -400,6 +404,13 @@ async function startMatch() {
     isHost
   });
 
+  startRoomSync();
+  lastTime = performance.now();
+  animFrameId = requestAnimationFrame(gameLoop);
+}
+
+function startRoomSync() {
+  if (syncIntervalId) clearInterval(syncIntervalId);
   syncIntervalId = setInterval(() => {
     if (!inGame || !myFish) return;
     const eff = getEffectiveStats();
@@ -419,9 +430,6 @@ async function startMatch() {
       svc.hostUpdateWorld(bossesState, eventState, all, maxT, maxL, roomMeta?.startedAt);
     }
   }, 66);
-
-  lastTime = performance.now();
-  animFrameId = requestAnimationFrame(gameLoop);
 }
 
 function isHost() {
@@ -581,7 +589,7 @@ function applyDamageToMe(rawDmg, attackerName, stunDuration = 0, onReflectCallba
   addFloatingText(myFish.x, myFish.y - 30, `-${actualDmg}`, "#ff4d4d", 1);
   if (stunDuration > 0) applyStunToMe(stunDuration);
   if (myFish.reflectTimer > 0 && onReflectCallback) onReflectCallback(Math.round(actualDmg * 0.6));
-  if (myFish.hp <= 0) finishMatch(true, `Bị ${attackerName} hạ gục!`);
+  if (myFish.hp <= 0) handlePlayerDeath(`Bị ${attackerName} hạ gục!`);
   return true;
 }
 
@@ -868,7 +876,7 @@ function gameLoop(now) {
 function updateGame(dt) {
   if (!myFish) return;
   for (let i = 0; i < 5; i++) if (myFish.skillCooldowns[i] > 0) myFish.skillCooldowns[i] = Math.max(0, myFish.skillCooldowns[i] - dt);
-  ["ultTimer", "shieldTimer", "stunTimer", "dashTimer", "rollTimer", "reflectTimer", "biteCooldown", "chompTimer"].forEach(k => {
+  ["ultTimer", "shieldTimer", "reviveInvulnTimer", "stunTimer", "dashTimer", "rollTimer", "reflectTimer", "biteCooldown", "chompTimer"].forEach(k => {
     if (myFish[k] > 0) myFish[k] = Math.max(0, myFish[k] - dt);
   });
   Object.keys(myFish.tempBuffs).forEach(k => { myFish.tempBuffs[k] = Math.max(0, myFish.tempBuffs[k] - dt); if (myFish.tempBuffs[k] <= 0) delete myFish.tempBuffs[k]; });
@@ -1205,7 +1213,7 @@ function updateGame(dt) {
   }
 }
 
-// ==================== HUD & EXIT ====================
+// ==================== HUD, HỒI SINH & EXIT ====================
 function getTop1Uid() {
   const all = [myFish, ...Object.values(remotePlayers)].filter(Boolean);
   all.sort((a, b) => (b.score || 0) - (a.score || 0));
@@ -1290,11 +1298,97 @@ function updateHUD(eff) {
 document.getElementById("btn-menu-exit").addEventListener("click", () => { biteHold = false; input.resetJoystick(); document.getElementById("exit-modal").classList.remove("hidden"); });
 document.getElementById("btn-resume").addEventListener("click", () => document.getElementById("exit-modal").classList.add("hidden"));
 document.getElementById("btn-confirm-exit").addEventListener("click", () => finishMatch(false, ""));
-document.getElementById("btn-back-lobby").addEventListener("click", () => { document.getElementById("death-modal").classList.add("hidden"); renderLobby(); showScreen("lobby"); });
+document.getElementById("btn-revive-match").addEventListener("click", reviveInMatch);
 
-async function finishMatch(isDead, reason) {
-  if (!inGame) return;
-  inGame = false; biteHold = false; input.resetJoystick();
+document.getElementById("btn-back-lobby").addEventListener("click", async () => {
+  document.getElementById("death-modal").classList.add("hidden");
+  if (awaitingRevive) {
+    awaitingRevive = false;
+    await finalizeMatchDataAndLeave();
+  }
+  await renderLobby();
+  showScreen("lobby");
+});
+
+function handlePlayerDeath(reason) {
+  if (!inGame || !myFish) return;
+
+  if (!myFish.hasRevived) {
+    inGame = false;
+    awaitingRevive = true;
+    biteHold = false;
+    input.resetJoystick();
+    cancelAnimationFrame(animFrameId);
+    if (syncIntervalId) clearInterval(syncIntervalId);
+
+    const score = Math.round(myFish.score);
+    const estCoins = sessionStats.coinsEarned + Math.floor(score / 150);
+    const nextLvl = Math.max(1, Math.floor(myFish.level * 0.5));
+    const canAfford = (userData.coins || 0) >= REVIVE_COST;
+
+    document.getElementById("death-title").textContent = "💀 BẠN ĐÃ TỬ VONG!";
+    document.getElementById("death-summary").innerHTML = `
+      <div>${escapeHtml(reason)}</div>
+      <div>Cấp hiện tại: <b>Cấp ${myFish.level}</b> • Điểm: <b>${score}</b></div>
+      <div>Cá đã nuốt: <b>${sessionStats.fishKilled}</b> • Mồi đã ăn: <b>${sessionStats.foodEaten}</b></div>
+      <div>Coin thưởng nếu về sảnh: <b style="color:#ffd43b">+${estCoins} Coin</b></div>
+    `;
+
+    const reviveBtn = document.getElementById("btn-revive-match");
+    const reviveNote = document.getElementById("revive-note");
+    reviveBtn.classList.remove("hidden");
+    reviveBtn.disabled = !canAfford;
+    reviveBtn.textContent = canAfford
+      ? `🔄 Hồi Sinh (🪙 ${REVIVE_COST} Coin • Về Cấp ${nextLvl} • Vô địch 5s)`
+      : `🔄 Không đủ ${REVIVE_COST} Coin (Hiện có: ${userData.coins || 0} Coin)`;
+    reviveNote.textContent = "Mỗi trận đấu chỉ được hồi sinh 1 lần duy nhất.";
+
+    document.getElementById("death-modal").classList.remove("hidden");
+    return;
+  }
+
+  finishMatch(true, reason);
+}
+
+async function reviveInMatch() {
+  if (!awaitingRevive || !myFish || myFish.hasRevived) return;
+  if ((userData.coins || 0) < REVIVE_COST) return alert(`Bạn cần ${REVIVE_COST} Coin để hồi sinh!`);
+
+  userData.coins -= REVIVE_COST;
+  await svc.saveUserProfile(currentUser.uid, userData);
+
+  const oldLevel = myFish.level;
+  const newLevel = Math.max(1, Math.floor(oldLevel * 0.5));
+  const lostLevels = oldLevel - newLevel;
+
+  myFish.hasRevived = true;
+  myFish.level = newLevel;
+  myFish.tier = getTierFromLevel(newLevel);
+  myFish.exp = 0;
+  myFish.expNeed = calcExpNeedForLevel(newLevel);
+  myFish.baseMaxHp = Math.max(100, myFish.baseMaxHp - lostLevels * 20);
+  myFish.baseDmg = Math.max(15, myFish.baseDmg - lostLevels * 3);
+  myFish.stunTimer = 0;
+  myFish.knockbackFly = null;
+  myFish.ultFinisher = null;
+
+  myFish.shieldTimer = Math.max(myFish.shieldTimer, REVIVE_INVULN_SEC);
+  myFish.reviveInvulnTimer = REVIVE_INVULN_SEC;
+  myFish.hp = getEffectiveStats().maxHp;
+
+  awaitingRevive = false;
+  document.getElementById("death-modal").classList.add("hidden");
+
+  inGame = true;
+  startRoomSync();
+  lastTime = performance.now();
+  animFrameId = requestAnimationFrame(gameLoop);
+
+  addToast(`✨ HỒI SINH THÀNH CÔNG! (Cấp ${oldLevel} → Cấp ${newLevel} • Vô địch 5s)`);
+  addFloatingText(myFish.x, myFish.y - 45, "🛡️ VÔ ĐỊCH 5s!", "#51cf66", 1.3);
+}
+
+async function finalizeMatchDataAndLeave() {
   cancelAnimationFrame(animFrameId);
   if (syncIntervalId) clearInterval(syncIntervalId);
   await svc.leaveGameRoom(currentUser?.uid);
@@ -1310,12 +1404,29 @@ async function finishMatch(isDead, reason) {
   userData.quests.reachedTier2 = Math.max(userData.quests.reachedTier2 || 0, sessionStats.reachedTier2);
   userData.quests.gamesPlayed += 1;
   await svc.saveUserProfile(currentUser.uid, userData);
+  return { score, totalCoins };
+}
+
+async function finishMatch(isDead, reason) {
+  if (!inGame) return;
+  inGame = false; awaitingRevive = false; biteHold = false; input.resetJoystick();
+  const { score, totalCoins } = await finalizeMatchDataAndLeave();
 
   if (isDead) {
     document.getElementById("death-title").textContent = "💀 BẠN ĐÃ TỬ VONG!";
-    document.getElementById("death-summary").innerHTML = `<div>${escapeHtml(reason)}</div><div>Cấp đạt được: <b>Cấp ${myFish.level}</b> • Điểm: <b>${score}</b></div><div>Cá đã nuốt: <b>${sessionStats.fishKilled}</b> • Mồi đã ăn: <b>${sessionStats.foodEaten}</b></div><div>Coin nhận được: <b style="color:#ffd43b">+${totalCoins} Coin</b></div>`;
+    document.getElementById("death-summary").innerHTML = `
+      <div>${escapeHtml(reason)}</div>
+      <div>Cấp đạt được: <b>Cấp ${myFish.level}</b> • Điểm: <b>${score}</b></div>
+      <div>Cá đã nuốt: <b>${sessionStats.fishKilled}</b> • Mồi đã ăn: <b>${sessionStats.foodEaten}</b></div>
+      <div>Coin nhận được: <b style="color:#ffd43b">+${totalCoins} Coin</b></div>
+    `;
+    document.getElementById("btn-revive-match").classList.add("hidden");
+    document.getElementById("revive-note").textContent = "Bạn đã sử dụng hết lượt hồi sinh trong trận này.";
     document.getElementById("death-modal").classList.remove("hidden");
-  } else { await renderLobby(); showScreen("lobby"); }
+  } else {
+    await renderLobby();
+    showScreen("lobby");
+  }
 }
 
 function addFloatingText(x, y, text, color, scale = 1) { floatingTexts.push({ x, y, text, color, scale, life: 1.0 }); }

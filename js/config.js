@@ -16,6 +16,8 @@ export const BOSS_VORTEX_RADIUS = 230;
 
 export const MAX_UPGRADE_LEVEL = 10;
 export const MAX_SKILL_LEVEL = 5;
+export const REVIVE_COST = 100;         // Giá hồi sinh: 100 Coin
+export const REVIVE_INVULN_SEC = 5.0;   // Vô địch 5 giây sau khi hồi sinh
 export const SKILL_UNLOCK_LEVELS = [1, 10, 20, 30, 40];
 export const SKILL_KEYS = ["SPACE", "Q", "W", "E", "R"];
 
